@@ -11,7 +11,10 @@ export default function Home() {
         <li>1 carousel / day</li>
         <li>Profitable ad testing</li>
       </ul>
-      <p style={{ color: "#888", marginTop: "2rem" }}>Shell — no features implemented yet.</p>
+      <h2>Tools</h2>
+      <ul>
+        <li><a href="/assets" style={{ color: "#0070f3" }}>Asset Browser</a></li>
+      </ul>
     </main>
   );
 }

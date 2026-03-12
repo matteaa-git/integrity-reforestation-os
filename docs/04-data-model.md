@@ -34,6 +34,7 @@ Uploaded media files (images, video, audio).
 | width_px | integer | Nullable — not applicable to audio |
 | height_px | integer | Nullable |
 | duration_ms | integer | Nullable — for video/audio |
+| hash | varchar(64), indexed | SHA-256 hex digest — used for deduplication during directory indexing |
 
 ### content_briefs
 High-level creative direction before a draft is produced.

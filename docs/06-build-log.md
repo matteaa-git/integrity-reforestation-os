@@ -45,3 +45,39 @@
 - All 10 models import without errors
 - Alembic generates valid PostgreSQL DDL in offline mode
 - API `/health` endpoint still responds correctly
+
+## 2026-03-12 — Asset Library Engine (Ticket 3)
+
+### What was done
+
+**Backend (`apps/api`):**
+- Added Pydantic schemas in `app/schemas/asset.py`
+- Created asset API routes in `app/routes/assets.py`: `GET /assets`, `GET /assets/{id}`, `POST /assets`, `PATCH /assets/{id}`, `POST /assets/index-directory`
+- Built directory indexer in `app/services/asset_indexer.py` — scans local paths, classifies by extension (image/video), skips non-media files
+- Added in-memory store in `app/store.py` — dict-backed CRUD with filter/search
+- Updated `app/main.py` with CORS middleware and asset router
+
+**Frontend (`apps/web`):**
+- Created `src/lib/api.ts` — typed API client for asset endpoints
+- Created `src/components/AssetGrid.tsx` — reusable grid with selection highlighting
+- Created `src/components/AssetPreview.tsx` — detail panel showing metadata
+- Created `src/app/assets/page.tsx` — Asset Browser with filter, search, index-directory, loading/empty/error states
+- Added Asset Browser link to home page
+
+### Verified
+- All 5 API endpoints respond correctly
+- `index-directory` scans, classifies, and skips non-media files
+- Filters by media_type and search by filename work
+- Web app builds clean (`/assets` route — 3.17 kB)
+- CORS allows localhost:3000 → localhost:4000
+
+### Hash-based deduplication
+- Added `hash` field (SHA-256) to asset model, store, schemas, and API responses
+- `index-directory` computes SHA-256 for each file and skips if hash already exists in the store
+- Prevents duplicate ingestion when re-indexing the same or overlapping directories
+
+### What's NOT included
+- No real image/video preview (placeholder icons)
+- No AI tagging
+- No cloud storage
+- No pagination (planned for large libraries)

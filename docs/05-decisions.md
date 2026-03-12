@@ -34,3 +34,17 @@
 | Alembic for migrations | Industry standard for SQLAlchemy; supports offline SQL generation for review |
 
 **Context:** SQLModel was considered but lacks mature support for complex relationships, JSONB, and check constraints needed by this schema. SQLAlchemy 2.0's `Mapped` + `mapped_column` API provides comparable type safety.
+
+## ADR-004: Asset Library — In-Memory Store (2026-03-12)
+
+**Decision:** Use an in-memory Python dict as the asset store for initial development. No PostgreSQL dependency required to run or test.
+
+| Choice | Rationale |
+|--------|-----------|
+| In-memory store | Repo stays runnable without PostgreSQL; swap to real DB by replacing `store.py` with SQLAlchemy session calls |
+| Local file paths | Assets reference local filesystem paths; no cloud storage yet |
+| Directory indexing | `POST /assets/index-directory` scans a local path and registers media files by extension |
+| Pydantic schemas separate from DB models | API contracts (`app/schemas/`) are decoupled from SQLAlchemy models — allows the store layer to change independently |
+| CORS enabled for localhost:3000 | Next.js dev server calls the API cross-origin |
+
+**Context:** PostgreSQL is planned but not yet running. The in-memory store lets the full asset workflow (index, browse, filter, select) work end-to-end immediately. The API shape is final — only the persistence layer will change.
