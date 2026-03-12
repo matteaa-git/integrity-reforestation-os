@@ -11,6 +11,12 @@ export default function Home() {
         <li>1 carousel / day</li>
         <li>Profitable ad testing</li>
       </ul>
+      <h2>Content Builders</h2>
+      <ul>
+        <li><a href="/stories/new" style={{ color: "#0070f3" }}>New Story</a></li>
+        <li><a href="/reels/new" style={{ color: "#0070f3" }}>New Reel</a></li>
+        <li><a href="/carousels/new" style={{ color: "#0070f3" }}>New Carousel</a></li>
+      </ul>
       <h2>Tools</h2>
       <ul>
         <li><a href="/assets" style={{ color: "#0070f3" }}>Asset Browser</a></li>

@@ -2,8 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routes.assets import router as assets_router
+from app.routes.drafts import router as drafts_router
 
-app = FastAPI(title="Instagram Growth OS API", version="0.0.2")
+app = FastAPI(title="Instagram Growth OS API", version="0.0.3")
 
 app.add_middleware(
     CORSMiddleware,
@@ -13,6 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(assets_router)
+app.include_router(drafts_router)
 
 
 @app.get("/health")

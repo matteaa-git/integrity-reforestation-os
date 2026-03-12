@@ -48,3 +48,15 @@
 | CORS enabled for localhost:3000 | Next.js dev server calls the API cross-origin |
 
 **Context:** PostgreSQL is planned but not yet running. The in-memory store lets the full asset workflow (index, browse, filter, select) work end-to-end immediately. The API shape is final — only the persistence layer will change.
+
+## ADR-005: Content Builders — Shared DraftCanvas Component (2026-03-12)
+
+**Decision:** All three builder pages (`/stories/new`, `/reels/new`, `/carousels/new`) use a single `DraftCanvas` component parameterized by `format` and `formatLabel`. Builder-specific behavior (e.g. carousel multi-asset ordering) is handled by the same component with format-aware logic.
+
+| Choice | Rationale |
+|--------|-----------|
+| Single DraftCanvas component | Stories, reels, and carousels share the same workflow: title, add assets, save. One component avoids duplication |
+| Auto-create draft on first asset add | Draft is created lazily — avoids orphan drafts from abandoned sessions |
+| AssetPicker as modal overlay | Keeps the builder context visible while selecting assets |
+| Position-based asset ordering | `draft_assets` join table has `position` column, re-normalized on add/remove |
+| Draft endpoints return nested assets | `GET /drafts/{id}` includes the ordered asset list to minimize round trips |

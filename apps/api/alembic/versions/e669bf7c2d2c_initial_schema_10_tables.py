@@ -137,6 +137,7 @@ def upgrade() -> None:
         sa.Column('position', sa.Integer, nullable=False, server_default='0'),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint('draft_id', 'asset_id', name='uq_draft_assets_draft_asset'),
     )
 
     # --- Tables with FKs to drafts ---

@@ -81,3 +81,34 @@
 - No AI tagging
 - No cloud storage
 - No pagination (planned for large libraries)
+
+## 2026-03-12 — Content Builders (Ticket 4)
+
+### What was done
+
+**Backend (`apps/api`):**
+- Added draft CRUD to in-memory store: `create_draft`, `get_draft`, `list_drafts`, `update_draft`
+- Added draft-asset join operations: `add_draft_asset`, `remove_draft_asset`, `get_draft_assets`
+- Created Pydantic schemas in `app/schemas/draft.py`
+- Created draft API routes in `app/routes/drafts.py`: `POST /drafts`, `GET /drafts`, `GET /drafts/{id}`, `PATCH /drafts/{id}`, `POST /drafts/{id}/assets`, `DELETE /drafts/{id}/assets/{asset_id}`
+- Registered drafts router in `app/main.py`
+
+**Frontend (`apps/web`):**
+- Created `DraftCanvas` component — shared builder with title edit, asset management, save/create flow
+- Created `AssetPicker` component — modal overlay with search/filter, excludes already-attached assets
+- Created `DraftAssetList` component — ordered list with position numbers and remove buttons
+- Created builder pages: `/stories/new`, `/reels/new`, `/carousels/new`
+- Extended `lib/api.ts` with draft CRUD + draft-asset functions
+- Updated home page with builder links
+
+### Verified
+- All 6 draft API endpoints tested (create, list, get, patch, add asset, remove asset)
+- Asset ordering preserved via position field
+- Web builds clean — all 6 routes compile
+- Documented in ADR-005
+
+### What's NOT included
+- No publishing workflow
+- No AI generation
+- No draft editing (load existing draft by ID)
+- No drag-to-reorder (position managed via add/remove)

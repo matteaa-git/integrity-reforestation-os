@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import ForeignKey, Integer
+from sqlalchemy import ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,6 +11,9 @@ from app.models.base import Base
 
 class DraftAsset(Base):
     __tablename__ = "draft_assets"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "asset_id", name="uq_draft_assets_draft_asset"),
+    )
 
     draft_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("drafts.id"), nullable=False
