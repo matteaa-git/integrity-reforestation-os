@@ -64,7 +64,7 @@ A content item moving through the production pipeline.
 |--------|------|-------|
 | title | varchar(256) | |
 | format | enum: story, reel, carousel | |
-| status | enum: idea, in_progress, review, approved, scheduled, published, failed, archived | |
+| status | enum: draft, in_review, approved, rejected, scheduled | |
 | caption | text | Nullable |
 | hashtags | text | Nullable |
 | ai_score | float | Nullable — for future AI scoring |

@@ -64,13 +64,17 @@ export interface DraftAssetEntry {
   asset: Asset;
 }
 
+export type DraftStatus = "draft" | "in_review" | "approved" | "rejected" | "scheduled";
+
 export interface Draft {
   id: string;
   title: string;
   format: ContentFormat;
-  status: string;
+  status: DraftStatus;
   source_asset_id: string | null;
   campaign_id: string | null;
+  scheduled_for: string | null;
+  schedule_notes: string | null;
   created_at: string;
   updated_at: string;
   assets?: DraftAssetEntry[];
@@ -97,10 +101,14 @@ export async function createDraft(data: {
 export async function fetchDrafts(params?: {
   format?: string;
   status?: string;
+  scheduled_after?: string;
+  scheduled_before?: string;
 }): Promise<DraftListResponse> {
   const url = new URL(`${API_BASE}/drafts`);
   if (params?.format) url.searchParams.set("format", params.format);
   if (params?.status) url.searchParams.set("status", params.status);
+  if (params?.scheduled_after) url.searchParams.set("scheduled_after", params.scheduled_after);
+  if (params?.scheduled_before) url.searchParams.set("scheduled_before", params.scheduled_before);
   const res = await fetch(url.toString());
   if (!res.ok) throw new Error(`Failed to fetch drafts: ${res.status}`);
   return res.json();
@@ -147,5 +155,54 @@ export async function removeDraftAsset(
     method: "DELETE",
   });
   if (!res.ok) throw new Error(`Failed to remove asset: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Workflow transitions
+// ---------------------------------------------------------------------------
+
+export async function submitForReview(draftId: string): Promise<Draft> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/submit-for-review`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to submit for review: ${res.status}`);
+  return res.json();
+}
+
+export async function approveDraft(draftId: string): Promise<Draft> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/approve`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to approve: ${res.status}`);
+  return res.json();
+}
+
+export async function rejectDraft(draftId: string): Promise<Draft> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/reject`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to reject: ${res.status}`);
+  return res.json();
+}
+
+export async function returnToDraft(draftId: string): Promise<Draft> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/return-to-draft`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to return to draft: ${res.status}`);
+  return res.json();
+}
+
+export async function scheduleDraft(
+  draftId: string,
+  data: { scheduled_for: string; notes?: string },
+): Promise<Draft> {
+  const res = await fetch(`${API_BASE}/drafts/${draftId}/schedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to schedule: ${res.status}`);
   return res.json();
 }

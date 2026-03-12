@@ -5,14 +5,11 @@ export type AssetKind = "image" | "video" | "audio";
 export type ContentFormat = "story" | "reel" | "carousel";
 
 export type DraftStatus =
-  | "idea"
-  | "in_progress"
-  | "review"
+  | "draft"
+  | "in_review"
   | "approved"
-  | "scheduled"
-  | "published"
-  | "failed"
-  | "archived";
+  | "rejected"
+  | "scheduled";
 
 export type PublishJobStatus = "pending" | "in_progress" | "succeeded" | "failed";
 

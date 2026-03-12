@@ -23,8 +23,7 @@ depends_on: Union[str, Sequence[str], None] = None
 ASSET_KIND = sa.Enum('image', 'video', 'audio', name='assetkind')
 CONTENT_FORMAT = sa.Enum('story', 'reel', 'carousel', name='contentformat')
 DRAFT_STATUS = sa.Enum(
-    'idea', 'in_progress', 'review', 'approved',
-    'scheduled', 'published', 'failed', 'archived',
+    'draft', 'in_review', 'approved', 'rejected', 'scheduled',
     name='draftstatus',
 )
 PUBLISH_JOB_STATUS = sa.Enum('pending', 'in_progress', 'succeeded', 'failed', name='publishjobstatus')

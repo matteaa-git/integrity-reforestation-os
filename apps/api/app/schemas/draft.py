@@ -8,15 +8,14 @@ from app.schemas.asset import AssetResponse
 
 ContentFormat = Literal["story", "reel", "carousel"]
 DraftStatus = Literal[
-    "idea", "in_progress", "review", "approved",
-    "scheduled", "published", "failed", "archived",
+    "draft", "in_review", "approved", "rejected", "scheduled",
 ]
 
 
 class DraftCreate(BaseModel):
     title: str
     format: ContentFormat
-    status: Optional[DraftStatus] = "idea"
+    status: Optional[DraftStatus] = "draft"
     source_asset_id: Optional[str] = None
     campaign_id: Optional[str] = None
 
@@ -35,6 +34,8 @@ class DraftResponse(BaseModel):
     status: str
     source_asset_id: Optional[str] = None
     campaign_id: Optional[str] = None
+    scheduled_for: Optional[str] = None
+    schedule_notes: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -59,3 +60,8 @@ class DraftListResponse(BaseModel):
 class AddDraftAssetRequest(BaseModel):
     asset_id: str
     position: Optional[int] = None
+
+
+class ScheduleDraftRequest(BaseModel):
+    scheduled_for: str  # ISO-8601 datetime
+    notes: Optional[str] = None

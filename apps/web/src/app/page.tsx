@@ -17,6 +17,11 @@ export default function Home() {
         <li><a href="/reels/new" style={{ color: "#0070f3" }}>New Reel</a></li>
         <li><a href="/carousels/new" style={{ color: "#0070f3" }}>New Carousel</a></li>
       </ul>
+      <h2>Workflow</h2>
+      <ul>
+        <li><a href="/queue" style={{ color: "#0070f3" }}>Approval Queue</a></li>
+        <li><a href="/calendar" style={{ color: "#0070f3" }}>Content Calendar</a></li>
+      </ul>
       <h2>Tools</h2>
       <ul>
         <li><a href="/assets" style={{ color: "#0070f3" }}>Asset Browser</a></li>

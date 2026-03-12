@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routes.assets import router as assets_router
 from app.routes.drafts import router as drafts_router
 
-app = FastAPI(title="Instagram Growth OS API", version="0.0.3")
+app = FastAPI(title="Instagram Growth OS API", version="0.0.4")
 
 app.add_middleware(
     CORSMiddleware,

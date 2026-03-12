@@ -112,3 +112,49 @@
 - No AI generation
 - No draft editing (load existing draft by ID)
 - No drag-to-reorder (position managed via add/remove)
+
+## 2026-03-12 — Approval Queue + Calendar (Ticket 5)
+
+### What was done
+
+**Backend (`apps/api`):**
+- Added 5 workflow transition endpoints to `app/routes/drafts.py`:
+  - `POST /drafts/{id}/submit-for-review` — requires status=draft + assets>0
+  - `POST /drafts/{id}/approve` — requires status=in_review
+  - `POST /drafts/{id}/reject` — requires status=in_review
+  - `POST /drafts/{id}/return-to-draft` — requires status=rejected or in_review
+  - `POST /drafts/{id}/schedule` — requires status=approved, sets scheduled_for + notes
+- All invalid transitions return 409 Conflict with descriptive message
+- Added `scheduled_for`, `schedule_notes` fields to draft model in store
+- Added `scheduled_after`/`scheduled_before` date-range filtering to `GET /drafts`
+- Added `draft_asset_count()` helper and `clear_all()` test reset to store
+- Updated `DraftStatus` literal to include `scheduled`
+- Added `ScheduleDraftRequest` schema
+- Wrote 13 pytest tests (6 valid transitions, 7 invalid transitions) — all passing
+
+**Frontend (`apps/web`):**
+- Created `DraftStatusBadge` component — color-coded pill badges for all 5 statuses
+- Created `SchedulePanel` component — datetime picker + notes for approved drafts
+- Created `ApprovalQueue` component — filterable list with inline workflow actions (submit, approve, reject, return-to-draft, schedule)
+- Created `CalendarView` component — month grid with navigation, shows scheduled drafts by date
+- Created `/queue` page with status filter tabs
+- Created `/calendar` page with month navigation
+- Extended `lib/api.ts` with 5 workflow functions + `DraftStatus` type + schedule fields on `Draft` interface
+- Updated home page with Workflow section (queue + calendar links)
+
+### Verified
+- 13 backend workflow tests pass (`pytest tests/test_workflow.py`)
+- Web builds clean — all 8 routes compile (added `/queue` 3.4 kB, `/calendar` 2.86 kB)
+- API bumped to v0.0.4
+- Documented in ADR-006
+
+### DB enum alignment
+- `DraftStatus` enum updated from 8 speculative values to 5 canonical values matching the enforced workflow: `draft`, `in_review`, `approved`, `rejected`, `scheduled`
+- Updated in: SQLAlchemy enum (`app/models/enums.py`), Draft model default, Alembic migration, shared-types (`packages/shared-types`), data-model docs
+- Old values removed: `idea`, `in_progress`, `review`, `published`, `failed`, `archived`
+
+### What's NOT included
+- No real-time updates / WebSocket push on status change
+- No notification system for reviewers
+- No drag-to-reschedule on calendar
+- No recurring schedule support

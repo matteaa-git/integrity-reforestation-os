@@ -60,3 +60,17 @@
 | AssetPicker as modal overlay | Keeps the builder context visible while selecting assets |
 | Position-based asset ordering | `draft_assets` join table has `position` column, re-normalized on add/remove |
 | Draft endpoints return nested assets | `GET /drafts/{id}` includes the ordered asset list to minimize round trips |
+
+## ADR-006: Approval Queue — Status-Based Workflow (2026-03-12)
+
+**Decision:** Drafts follow a strict status machine: `draft → in_review → approved → scheduled` (with a `rejected` branch). Transitions are enforced server-side via dedicated endpoints rather than a generic `PATCH /drafts/{id}` status update.
+
+| Choice | Rationale |
+|--------|-----------|
+| Dedicated transition endpoints | `POST /drafts/{id}/approve`, `/reject`, `/submit-for-review`, `/return-to-draft`, `/schedule` — each validates preconditions (current status, has assets) and returns 409 on invalid transitions |
+| No direct status PATCH for workflow | Prevents clients from skipping validation; `PATCH` still works for title/metadata edits |
+| Asset-count guard on submit | Drafts cannot enter `in_review` without at least one attached asset — catches empty submissions early |
+| `return-to-draft` from both `in_review` and `rejected` | Allows reviewers to pull back drafts and creators to iterate after rejection, but not from `approved` (committed to publish) |
+| `scheduled_for` + `schedule_notes` on schedule | Scheduling is a distinct step after approval — captures when to post and any context for the scheduler |
+| Calendar view queries by date range | `scheduled_after` / `scheduled_before` params on `GET /drafts` support efficient month-view loading |
+| DB enum aligned with workflow | `DraftStatus` enum reduced from 8 values (`idea`, `in_progress`, `review`, `approved`, `scheduled`, `published`, `failed`, `archived`) to 5 (`draft`, `in_review`, `approved`, `rejected`, `scheduled`) — matches the enforced API workflow exactly. `published`/`failed`/`archived` will be reintroduced when publish jobs are implemented |

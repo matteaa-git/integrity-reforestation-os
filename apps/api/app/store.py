@@ -82,9 +82,11 @@ def create_draft(data: dict) -> dict:
         "id": draft_id,
         "title": data["title"],
         "format": data["format"],
-        "status": data.get("status", "idea"),
+        "status": data.get("status", "draft"),
         "source_asset_id": data.get("source_asset_id"),
         "campaign_id": data.get("campaign_id"),
+        "scheduled_for": None,
+        "schedule_notes": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -100,13 +102,19 @@ def get_draft(draft_id: str) -> Optional[dict]:
 def list_drafts(
     fmt: Optional[str] = None,
     status: Optional[str] = None,
+    scheduled_after: Optional[str] = None,
+    scheduled_before: Optional[str] = None,
 ) -> List[dict]:
     results = list(_drafts.values())
     if fmt:
         results = [d for d in results if d["format"] == fmt]
     if status:
         results = [d for d in results if d["status"] == status]
-    results.sort(key=lambda d: d["created_at"], reverse=True)
+    if scheduled_after:
+        results = [d for d in results if d.get("scheduled_for") and d["scheduled_for"] >= scheduled_after]
+    if scheduled_before:
+        results = [d for d in results if d.get("scheduled_for") and d["scheduled_for"] <= scheduled_before]
+    results.sort(key=lambda d: d.get("scheduled_for") or d["created_at"], reverse=True)
     return results
 
 
@@ -119,6 +127,10 @@ def update_draft(draft_id: str, data: dict) -> Optional[dict]:
             draft[key] = value
     draft["updated_at"] = _now_iso()
     return draft
+
+
+def draft_asset_count(draft_id: str) -> int:
+    return len(_draft_assets.get(draft_id, []))
 
 
 # ---------------------------------------------------------------------------
@@ -168,3 +180,14 @@ def remove_draft_asset(draft_id: str, asset_id: str) -> bool:
     for i, e in enumerate(_draft_assets[draft_id]):
         e["position"] = i
     return len(_draft_assets[draft_id]) < before
+
+
+# ---------------------------------------------------------------------------
+# Test helpers
+# ---------------------------------------------------------------------------
+
+def clear_all() -> None:
+    """Reset all stores — for testing only."""
+    _assets.clear()
+    _drafts.clear()
+    _draft_assets.clear()

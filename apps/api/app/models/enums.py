@@ -16,14 +16,11 @@ class ContentFormat(str, enum.Enum):
 
 
 class DraftStatus(str, enum.Enum):
-    IDEA = "idea"
-    IN_PROGRESS = "in_progress"
-    REVIEW = "review"
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
     APPROVED = "approved"
+    REJECTED = "rejected"
     SCHEDULED = "scheduled"
-    PUBLISHED = "published"
-    FAILED = "failed"
-    ARCHIVED = "archived"
 
 
 class PublishJobStatus(str, enum.Enum):

@@ -17,7 +17,7 @@ class Draft(Base):
     title: Mapped[str] = mapped_column(String(256), nullable=False)
     format: Mapped[ContentFormat] = mapped_column(Enum(ContentFormat), nullable=False)
     status: Mapped[DraftStatus] = mapped_column(
-        Enum(DraftStatus), nullable=False, default=DraftStatus.IDEA
+        Enum(DraftStatus), nullable=False, default=DraftStatus.DRAFT
     )
     caption: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     hashtags: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
