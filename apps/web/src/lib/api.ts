@@ -206,3 +206,109 @@ export async function scheduleDraft(
   if (!res.ok) throw new Error(`Failed to schedule: ${res.status}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Ad Creatives
+// ---------------------------------------------------------------------------
+
+export type AdCreativeStatus = "draft" | "ready" | "archived";
+
+export interface AdCreative {
+  id: string;
+  title: string;
+  asset_id: string | null;
+  draft_id: string | null;
+  campaign_id: string | null;
+  hook_text: string;
+  cta_text: string;
+  thumbnail_label: string;
+  status: AdCreativeStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdCreativeListResponse {
+  ad_creatives: AdCreative[];
+  total: number;
+}
+
+export async function fetchAdCreatives(params?: {
+  campaign_id?: string;
+  status?: string;
+}): Promise<AdCreativeListResponse> {
+  const url = new URL(`${API_BASE}/ad-creatives`);
+  if (params?.campaign_id) url.searchParams.set("campaign_id", params.campaign_id);
+  if (params?.status) url.searchParams.set("status", params.status);
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error(`Failed to fetch ad creatives: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAdCreative(id: string): Promise<AdCreative> {
+  const res = await fetch(`${API_BASE}/ad-creatives/${id}`);
+  if (!res.ok) throw new Error(`Failed to fetch ad creative: ${res.status}`);
+  return res.json();
+}
+
+export async function createAdCreative(data: {
+  title: string;
+  asset_id?: string;
+  campaign_id?: string;
+  hook_text?: string;
+  cta_text?: string;
+  thumbnail_label?: string;
+}): Promise<AdCreative> {
+  const res = await fetch(`${API_BASE}/ad-creatives`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to create ad creative: ${res.status}`);
+  return res.json();
+}
+
+export async function updateAdCreative(
+  id: string,
+  data: {
+    title?: string;
+    campaign_id?: string;
+    hook_text?: string;
+    cta_text?: string;
+    thumbnail_label?: string;
+    status?: AdCreativeStatus;
+  },
+): Promise<AdCreative> {
+  const res = await fetch(`${API_BASE}/ad-creatives/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to update ad creative: ${res.status}`);
+  return res.json();
+}
+
+export async function createAdCreativeFromDraft(
+  draftId: string,
+  data?: { campaign_id?: string; hook_text?: string; cta_text?: string; thumbnail_label?: string },
+): Promise<AdCreative> {
+  const res = await fetch(`${API_BASE}/ad-creatives/from-draft/${draftId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data ?? {}),
+  });
+  if (!res.ok) throw new Error(`Failed to create from draft: ${res.status}`);
+  return res.json();
+}
+
+export async function createAdCreativeFromAsset(
+  assetId: string,
+  data?: { title?: string; campaign_id?: string; hook_text?: string; cta_text?: string; thumbnail_label?: string },
+): Promise<AdCreative> {
+  const res = await fetch(`${API_BASE}/ad-creatives/from-asset/${assetId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data ?? {}),
+  });
+  if (!res.ok) throw new Error(`Failed to create from asset: ${res.status}`);
+  return res.json();
+}

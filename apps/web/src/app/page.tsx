@@ -22,6 +22,10 @@ export default function Home() {
         <li><a href="/queue" style={{ color: "#0070f3" }}>Approval Queue</a></li>
         <li><a href="/calendar" style={{ color: "#0070f3" }}>Content Calendar</a></li>
       </ul>
+      <h2>Paid Growth</h2>
+      <ul>
+        <li><a href="/ad-lab" style={{ color: "#0070f3" }}>Ad Creative Lab</a></li>
+      </ul>
       <h2>Tools</h2>
       <ul>
         <li><a href="/assets" style={{ color: "#0070f3" }}>Asset Browser</a></li>

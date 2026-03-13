@@ -1,9 +1,9 @@
-"""AdCreative — a paid ad creative linked to an asset and campaign."""
+"""AdCreative — a paid ad creative for hook/CTA/thumbnail testing."""
 
 import uuid
 from typing import List, Optional
 
-from sqlalchemy import Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,26 +14,26 @@ from app.models.enums import AdCreativeStatus
 class AdCreative(Base):
     __tablename__ = "ad_creatives"
 
-    asset_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("assets.id"), nullable=False
+    title: Mapped[str] = mapped_column(String(256), nullable=False)
+    asset_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("assets.id"), nullable=True
+    )
+    draft_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("drafts.id"), nullable=True
     )
     campaign_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=True
     )
-    headline: Mapped[str] = mapped_column(String(256), nullable=False)
-    body_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    call_to_action: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    hook_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    cta_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    thumbnail_label: Mapped[str] = mapped_column(String(256), nullable=False, default="")
     status: Mapped[AdCreativeStatus] = mapped_column(
         Enum(AdCreativeStatus), nullable=False, default=AdCreativeStatus.DRAFT
     )
-    spend_cents: Mapped[int] = mapped_column(Integer, default=0)
-    impressions: Mapped[int] = mapped_column(Integer, default=0)
-    clicks: Mapped[int] = mapped_column(Integer, default=0)
-    conversions: Mapped[int] = mapped_column(Integer, default=0)
-    instagram_ad_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
 
     # relationships
-    asset: Mapped["Asset"] = relationship(back_populates="ad_creatives")
+    asset: Mapped[Optional["Asset"]] = relationship(back_populates="ad_creatives")
+    draft: Mapped[Optional["Draft"]] = relationship(back_populates="ad_creatives")
     campaign: Mapped[Optional["Campaign"]] = relationship(
         back_populates="ad_creatives"
     )
@@ -46,6 +46,7 @@ class AdCreative(Base):
 
 
 from app.models.asset import Asset  # noqa: E402, F811
+from app.models.draft import Draft  # noqa: E402, F811
 from app.models.campaign import Campaign  # noqa: E402, F811
 from app.models.performance_event import PerformanceEvent  # noqa: E402, F811
 from app.models.recommendation import Recommendation  # noqa: E402, F811

@@ -183,6 +183,60 @@ def remove_draft_asset(draft_id: str, asset_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Ad creatives
+# ---------------------------------------------------------------------------
+
+_ad_creatives: Dict[str, dict] = {}
+
+
+def create_ad_creative(data: dict) -> dict:
+    creative_id = str(uuid.uuid4())
+    now = _now_iso()
+    creative = {
+        "id": creative_id,
+        "title": data.get("title", ""),
+        "asset_id": data.get("asset_id"),
+        "draft_id": data.get("draft_id"),
+        "campaign_id": data.get("campaign_id"),
+        "hook_text": data.get("hook_text", ""),
+        "cta_text": data.get("cta_text", ""),
+        "thumbnail_label": data.get("thumbnail_label", ""),
+        "status": data.get("status", "draft"),
+        "created_at": now,
+        "updated_at": now,
+    }
+    _ad_creatives[creative_id] = creative
+    return creative
+
+
+def get_ad_creative(creative_id: str) -> Optional[dict]:
+    return _ad_creatives.get(creative_id)
+
+
+def list_ad_creatives(
+    campaign_id: Optional[str] = None,
+    status: Optional[str] = None,
+) -> List[dict]:
+    results = list(_ad_creatives.values())
+    if campaign_id:
+        results = [c for c in results if c.get("campaign_id") == campaign_id]
+    if status:
+        results = [c for c in results if c["status"] == status]
+    results.sort(key=lambda c: c["created_at"], reverse=True)
+    return results
+
+
+def update_ad_creative(creative_id: str, data: dict) -> Optional[dict]:
+    creative = _ad_creatives.get(creative_id)
+    if creative is None:
+        return None
+    for key, value in data.items():
+        creative[key] = value
+    creative["updated_at"] = _now_iso()
+    return creative
+
+
+# ---------------------------------------------------------------------------
 # Test helpers
 # ---------------------------------------------------------------------------
 
@@ -191,3 +245,4 @@ def clear_all() -> None:
     _assets.clear()
     _drafts.clear()
     _draft_assets.clear()
+    _ad_creatives.clear()

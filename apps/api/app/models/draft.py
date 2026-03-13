@@ -51,6 +51,7 @@ class Draft(Base):
     recommendations: Mapped[List["Recommendation"]] = relationship(
         back_populates="draft"
     )
+    ad_creatives: Mapped[List["AdCreative"]] = relationship(back_populates="draft")
 
 
 from app.models.asset import Asset  # noqa: E402, F811
@@ -60,3 +61,4 @@ from app.models.campaign import Campaign  # noqa: E402, F811
 from app.models.draft_asset import DraftAsset  # noqa: E402, F811
 from app.models.publish_job import PublishJob  # noqa: E402, F811
 from app.models.recommendation import Recommendation  # noqa: E402, F811
+from app.models.ad_creative import AdCreative  # noqa: E402, F811

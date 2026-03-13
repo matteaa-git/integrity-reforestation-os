@@ -15,7 +15,7 @@ export type PublishJobStatus = "pending" | "in_progress" | "succeeded" | "failed
 
 export type CampaignStatus = "draft" | "active" | "paused" | "completed" | "archived";
 
-export type AdCreativeStatus = "draft" | "active" | "paused" | "completed";
+export type AdCreativeStatus = "draft" | "ready" | "archived";
 
 export type PerformanceEventSource = "publish_job" | "ad_creative";
 
@@ -97,17 +97,14 @@ export interface PublishJob extends BaseEntity {
 }
 
 export interface AdCreative extends BaseEntity {
-  assetId: string;
+  title: string;
+  assetId?: string;
+  draftId?: string;
   campaignId?: string;
-  headline: string;
-  bodyText?: string;
-  callToAction?: string;
+  hookText: string;
+  ctaText: string;
+  thumbnailLabel: string;
   status: AdCreativeStatus;
-  spendCents: number;
-  impressions: number;
-  clicks: number;
-  conversions: number;
-  instagramAdId?: string;
 }
 
 export interface PerformanceEvent extends BaseEntity {

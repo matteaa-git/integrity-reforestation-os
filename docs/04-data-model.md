@@ -107,21 +107,18 @@ A scheduled or completed attempt to publish a draft to Instagram.
 | error_message | text | Nullable |
 
 ### ad_creatives
-A paid ad creative linked to an asset and optionally a campaign.
+A paid ad creative for hook, CTA, and thumbnail/cover variant testing.
 
 | Column | Type | Notes |
 |--------|------|-------|
-| asset_id | FK → assets | Required |
+| title | varchar(256) | |
+| asset_id | FK → assets | Nullable — linked source asset |
+| draft_id | FK → drafts | Nullable — linked source draft |
 | campaign_id | FK → campaigns | Nullable |
-| headline | varchar(256) | |
-| body_text | text | Nullable |
-| call_to_action | varchar(64) | Nullable |
-| status | enum: draft, active, paused, completed | |
-| spend_cents | integer | Running spend total |
-| impressions | integer | |
-| clicks | integer | |
-| conversions | integer | |
-| instagram_ad_id | varchar(128) | Nullable |
+| hook_text | text | Attention-grabbing opening text |
+| cta_text | text | Call-to-action text |
+| thumbnail_label | varchar(256) | Variant label (e.g. "Cover A") |
+| status | enum: draft, ready, archived | |
 
 ### performance_events
 Metric snapshots for either a publish_job or an ad_creative (polymorphic via two nullable FKs + source discriminator).

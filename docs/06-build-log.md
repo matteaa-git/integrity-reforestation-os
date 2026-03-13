@@ -158,3 +158,55 @@
 - No notification system for reviewers
 - No drag-to-reschedule on calendar
 - No recurring schedule support
+
+## 2026-03-12 — Ad Creative Lab (Ticket 6)
+
+### What was done
+
+**Backend (`apps/api`):**
+- Added ad creative CRUD to in-memory store: `create_ad_creative`, `get_ad_creative`, `list_ad_creatives`, `update_ad_creative`
+- Created Pydantic schemas in `app/schemas/ad_creative.py`: `AdCreativeCreate`, `AdCreativeUpdate`, `AdCreativeResponse`, `FromDraftRequest`, `FromAssetRequest`
+- Created ad creative API routes in `app/routes/ad_creatives.py`:
+  - `POST /ad-creatives` — manual creation
+  - `GET /ad-creatives` — list with `campaign_id` and `status` filters
+  - `GET /ad-creatives/{id}` — get by ID
+  - `PATCH /ad-creatives/{id}` — update hook/CTA/thumbnail/status
+  - `POST /ad-creatives/from-draft/{draft_id}` — variant from draft (inherits title, links draft_id)
+  - `POST /ad-creatives/from-asset/{asset_id}` — variant from asset (inherits filename, links asset_id)
+- Registered ad-creatives router in `app/main.py`
+- Aligned `AdCreativeStatus` DB enum: `draft`, `ready`, `archived` (was `draft`, `active`, `paused`, `completed`)
+- Wrote 12 pytest tests — all passing (create, from-asset, from-draft, update hook/CTA/thumbnail, filter by status/campaign)
+
+**Frontend (`apps/web`):**
+- Created `AdCreativeList` component — clickable cards with status badges, hook/CTA preview
+- Created `AdCreativeEditor` component — form for editing title, hook_text, cta_text, thumbnail_label, status
+- Created `VariantBuilder` component — modal for creating ad creatives from existing assets or drafts
+- Created `/ad-lab` page — list + editor side-by-side, status filter tabs, create manually or from source
+- Extended `lib/api.ts` with ad creative CRUD + variant creation functions + `AdCreativeStatus` type
+- Updated home page with Paid Growth section
+
+**Shared types + DB alignment:**
+- Updated `AdCreativeStatus` in `packages/shared-types` and `app/models/enums.py` to `draft | ready | archived`
+- Updated `AdCreative` interface in shared-types with new fields: `title`, `hookText`, `ctaText`, `thumbnailLabel`, `draftId`
+- Updated Alembic migration enum
+
+**SQLAlchemy model + migration alignment:**
+- Replaced `headline`, `body_text`, `call_to_action` with `title`, `hook_text`, `cta_text`, `thumbnail_label`
+- Removed deferred columns: `spend_cents`, `impressions`, `clicks`, `conversions`, `instagram_ad_id`
+- Added `draft_id` FK (nullable) for from-draft variant linking
+- Made `asset_id` FK nullable (from-draft flow may not link an asset)
+- Added `draft` → `ad_creatives` relationship (`back_populates="draft"`)
+- Updated Alembic initial migration to match
+
+### Verified
+- 25 backend tests pass (12 ad creative + 13 workflow)
+- Web builds clean — 9 routes compile (added `/ad-lab` 4.85 kB)
+- API bumped to v0.0.5
+- Documented in ADR-007
+
+### What's NOT included
+- No Meta Ads API integration
+- No spend/budget management
+- No performance reporting or metrics
+- No AI-generated hooks or CTAs
+- No recommendation engine

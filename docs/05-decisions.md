@@ -74,3 +74,16 @@
 | `scheduled_for` + `schedule_notes` on schedule | Scheduling is a distinct step after approval — captures when to post and any context for the scheduler |
 | Calendar view queries by date range | `scheduled_after` / `scheduled_before` params on `GET /drafts` support efficient month-view loading |
 | DB enum aligned with workflow | `DraftStatus` enum reduced from 8 values (`idea`, `in_progress`, `review`, `approved`, `scheduled`, `published`, `failed`, `archived`) to 5 (`draft`, `in_review`, `approved`, `rejected`, `scheduled`) — matches the enforced API workflow exactly. `published`/`failed`/`archived` will be reintroduced when publish jobs are implemented |
+
+## ADR-007: Ad Creative Lab — Internal Creative Management (2026-03-12)
+
+**Decision:** Ad creatives are managed as independent records separate from the organic draft workflow. They can be created manually, from an existing asset, or from an existing draft. No Meta Ads API integration yet — this is the internal creative generation and storage layer only.
+
+| Choice | Rationale |
+|--------|-----------|
+| Separate from organic workflow | Paid creative testing (hooks, CTAs, thumbnails) has different lifecycle from organic content approval. Keeping them separate avoids muddying the draft status machine |
+| `from-asset` / `from-draft` endpoints | Quick variant creation by inheriting title and linking source object. No AI generation — simple record creation with editable fields |
+| `hook_text`, `cta_text`, `thumbnail_label` fields | Structured fields for the three main ad testing dimensions (hook testing, CTA testing, cover/thumbnail variants). Free-text rather than enum to allow creative flexibility |
+| `AdCreativeStatus`: `draft`, `ready`, `archived` | Simple 3-state lifecycle. DB enum aligned from `draft/active/paused/completed` — `active/paused/completed` are Meta Ads API concepts not needed until integration |
+| DB schema aligned with API | Removed `headline`, `body_text`, `call_to_action`, `spend_cents`, `impressions`, `clicks`, `conversions`, `instagram_ad_id` from the ad_creatives table — these are Meta Ads integration concerns. Added `title`, `draft_id`, `hook_text`, `cta_text`, `thumbnail_label`. Made `asset_id` nullable (from-draft flow may not have one). Performance/spend columns will be reintroduced when Meta Ads integration ships |
+| VariantBuilder as modal overlay | Same pattern as AssetPicker — keeps the Ad Lab context visible while selecting source objects |

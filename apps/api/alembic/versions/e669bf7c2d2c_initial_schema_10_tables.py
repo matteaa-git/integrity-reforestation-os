@@ -28,7 +28,7 @@ DRAFT_STATUS = sa.Enum(
 )
 PUBLISH_JOB_STATUS = sa.Enum('pending', 'in_progress', 'succeeded', 'failed', name='publishjobstatus')
 CAMPAIGN_STATUS = sa.Enum('draft', 'active', 'paused', 'completed', 'archived', name='campaignstatus')
-AD_CREATIVE_STATUS = sa.Enum('draft', 'active', 'paused', 'completed', name='adcreativestatus')
+AD_CREATIVE_STATUS = sa.Enum('draft', 'ready', 'archived', name='adcreativestatus')
 PERF_EVENT_SOURCE = sa.Enum('publish_job', 'ad_creative', name='performanceeventsource')
 REC_TARGET_KIND = sa.Enum('draft', 'ad_creative', name='recommendationtargetkind')
 REC_STATUS = sa.Enum('pending', 'accepted', 'dismissed', name='recommendationstatus')
@@ -111,17 +111,14 @@ def upgrade() -> None:
     op.create_table(
         'ad_creatives',
         sa.Column('id', UUID(as_uuid=True), primary_key=True),
-        sa.Column('asset_id', UUID(as_uuid=True), sa.ForeignKey('assets.id'), nullable=False),
+        sa.Column('title', sa.String(256), nullable=False),
+        sa.Column('asset_id', UUID(as_uuid=True), sa.ForeignKey('assets.id'), nullable=True),
+        sa.Column('draft_id', UUID(as_uuid=True), sa.ForeignKey('drafts.id'), nullable=True),
         sa.Column('campaign_id', UUID(as_uuid=True), sa.ForeignKey('campaigns.id'), nullable=True),
-        sa.Column('headline', sa.String(256), nullable=False),
-        sa.Column('body_text', sa.Text, nullable=True),
-        sa.Column('call_to_action', sa.String(64), nullable=True),
+        sa.Column('hook_text', sa.Text, nullable=False, server_default=''),
+        sa.Column('cta_text', sa.Text, nullable=False, server_default=''),
+        sa.Column('thumbnail_label', sa.String(256), nullable=False, server_default=''),
         sa.Column('status', AD_CREATIVE_STATUS, nullable=False),
-        sa.Column('spend_cents', sa.Integer, nullable=False, server_default='0'),
-        sa.Column('impressions', sa.Integer, nullable=False, server_default='0'),
-        sa.Column('clicks', sa.Integer, nullable=False, server_default='0'),
-        sa.Column('conversions', sa.Integer, nullable=False, server_default='0'),
-        sa.Column('instagram_ad_id', sa.String(128), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )

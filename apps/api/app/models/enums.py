@@ -40,9 +40,8 @@ class CampaignStatus(str, enum.Enum):
 
 class AdCreativeStatus(str, enum.Enum):
     DRAFT = "draft"
-    ACTIVE = "active"
-    PAUSED = "paused"
-    COMPLETED = "completed"
+    READY = "ready"
+    ARCHIVED = "archived"
 
 
 class PerformanceEventSource(str, enum.Enum):
