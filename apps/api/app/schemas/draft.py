@@ -1,6 +1,6 @@
 """Pydantic schemas for the Draft API."""
 
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -9,6 +9,7 @@ from app.schemas.asset import AssetResponse
 ContentFormat = Literal["story", "reel", "carousel"]
 DraftStatus = Literal[
     "draft", "in_review", "approved", "rejected", "scheduled",
+    "publishing", "published", "publish_failed", "failed",
 ]
 
 
@@ -18,6 +19,9 @@ class DraftCreate(BaseModel):
     status: Optional[DraftStatus] = "draft"
     source_asset_id: Optional[str] = None
     campaign_id: Optional[str] = None
+    caption: Optional[str] = None
+    hashtags: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class DraftUpdate(BaseModel):
@@ -25,6 +29,10 @@ class DraftUpdate(BaseModel):
     status: Optional[DraftStatus] = None
     source_asset_id: Optional[str] = None
     campaign_id: Optional[str] = None
+    caption: Optional[str] = None
+    hashtags: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    publish_error: Optional[str] = None
 
 
 class DraftResponse(BaseModel):
@@ -34,8 +42,12 @@ class DraftResponse(BaseModel):
     status: str
     source_asset_id: Optional[str] = None
     campaign_id: Optional[str] = None
+    caption: Optional[str] = None
+    hashtags: Optional[str] = None
     scheduled_for: Optional[str] = None
     schedule_notes: Optional[str] = None
+    publish_error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
     created_at: str
     updated_at: str
 
@@ -65,3 +77,7 @@ class AddDraftAssetRequest(BaseModel):
 class ScheduleDraftRequest(BaseModel):
     scheduled_for: str  # ISO-8601 datetime
     notes: Optional[str] = None
+
+
+class RescheduleDraftRequest(BaseModel):
+    scheduled_for: str  # ISO-8601 datetime

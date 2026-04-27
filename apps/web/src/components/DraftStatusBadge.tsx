@@ -1,28 +1,19 @@
 import type { DraftStatus } from "@/lib/api";
+import Badge from "@/components/ui/Badge";
 
-const STATUS_STYLES: Record<DraftStatus, { bg: string; color: string; label: string }> = {
-  draft: { bg: "#e3e8ef", color: "#333", label: "Draft" },
-  in_review: { bg: "#fff3cd", color: "#856404", label: "In Review" },
-  approved: { bg: "#d4edda", color: "#155724", label: "Approved" },
-  rejected: { bg: "#f8d7da", color: "#721c24", label: "Rejected" },
-  scheduled: { bg: "#cce5ff", color: "#004085", label: "Scheduled" },
+const STATUS_MAP: Record<DraftStatus, { variant: "default" | "success" | "warning" | "danger" | "info" | "muted"; label: string }> = {
+  draft:          { variant: "default", label: "Draft" },
+  in_review:      { variant: "warning", label: "In Review" },
+  approved:       { variant: "success", label: "Approved" },
+  rejected:       { variant: "danger",  label: "Rejected" },
+  scheduled:      { variant: "info",    label: "Scheduled" },
+  publishing:     { variant: "info",    label: "Publishing…" },
+  published:      { variant: "success", label: "Published" },
+  publish_failed: { variant: "danger",  label: "Publish Failed" },
+  failed:         { variant: "danger",  label: "Failed" },
 };
 
 export default function DraftStatusBadge({ status }: { status: DraftStatus }) {
-  const s = STATUS_STYLES[status] ?? STATUS_STYLES.draft;
-  return (
-    <span
-      style={{
-        display: "inline-block",
-        padding: "2px 10px",
-        borderRadius: "12px",
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        background: s.bg,
-        color: s.color,
-      }}
-    >
-      {s.label}
-    </span>
-  );
+  const s = STATUS_MAP[status] ?? STATUS_MAP.draft;
+  return <Badge variant={s.variant}>{s.label}</Badge>;
 }

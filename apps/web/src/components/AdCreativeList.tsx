@@ -1,12 +1,8 @@
 "use client";
 
-import type { AdCreative, AdCreativeStatus } from "@/lib/api";
-
-const STATUS_STYLES: Record<AdCreativeStatus, { bg: string; color: string; label: string }> = {
-  draft: { bg: "#e3e8ef", color: "#333", label: "Draft" },
-  ready: { bg: "#d4edda", color: "#155724", label: "Ready" },
-  archived: { bg: "#f0f0f0", color: "#888", label: "Archived" },
-};
+import type { AdCreative } from "@/lib/api";
+import Badge from "@/components/ui/Badge";
+import EmptyState from "@/components/ui/EmptyState";
 
 interface AdCreativeListProps {
   creatives: AdCreative[];
@@ -14,54 +10,46 @@ interface AdCreativeListProps {
   onSelect: (creative: AdCreative) => void;
 }
 
+const STATUS_BADGE: Record<string, "default" | "success" | "muted"> = {
+  draft: "default",
+  ready: "success",
+  archived: "muted",
+};
+
 export default function AdCreativeList({ creatives, selectedId, onSelect }: AdCreativeListProps) {
   if (creatives.length === 0) {
-    return (
-      <div style={{ padding: "2rem", textAlign: "center", color: "#888" }}>
-        No ad creatives yet. Create one from an asset or draft.
-      </div>
-    );
+    return <EmptyState icon="◫" title="No ad creatives" description="Create one from an asset or draft." />;
   }
 
   return (
-    <div>
+    <div className="space-y-2">
       {creatives.map((c) => {
-        const s = STATUS_STYLES[c.status] ?? STATUS_STYLES.draft;
         const isSelected = c.id === selectedId;
         return (
           <div
             key={c.id}
             onClick={() => onSelect(c)}
-            style={{
-              border: isSelected ? "2px solid #0070f3" : "1px solid #e0e0e0",
-              borderRadius: "8px",
-              padding: "0.75rem 1rem",
-              marginBottom: "0.5rem",
-              cursor: "pointer",
-              background: isSelected ? "#f0f7ff" : "#fff",
-            }}
+            className={`rounded-xl border p-3 cursor-pointer transition-all ${
+              isSelected
+                ? "border-primary bg-primary/5 shadow-sm"
+                : "border-border bg-surface hover:border-primary/20"
+            }`}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <strong style={{ fontSize: "0.9rem" }}>{c.title}</strong>
-              <span style={{
-                display: "inline-block",
-                padding: "2px 10px",
-                borderRadius: "12px",
-                fontSize: "0.7rem",
-                fontWeight: 600,
-                background: s.bg,
-                color: s.color,
-              }}>
-                {s.label}
-              </span>
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-medium text-text-primary">{c.title}</span>
+              <Badge variant={STATUS_BADGE[c.status] ?? "default"}>
+                {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
+              </Badge>
             </div>
-            <div style={{ fontSize: "0.75rem", color: "#888", marginTop: "4px" }}>
-              {c.hook_text && <span>Hook: {c.hook_text}</span>}
-              {c.hook_text && c.cta_text && <span> &middot; </span>}
-              {c.cta_text && <span>CTA: {c.cta_text}</span>}
-            </div>
+            {(c.hook_text || c.cta_text) && (
+              <div className="text-xs text-text-tertiary mt-1">
+                {c.hook_text && <span>Hook: {c.hook_text}</span>}
+                {c.hook_text && c.cta_text && <span> &middot; </span>}
+                {c.cta_text && <span>CTA: {c.cta_text}</span>}
+              </div>
+            )}
             {c.thumbnail_label && (
-              <div style={{ fontSize: "0.7rem", color: "#666", marginTop: "2px" }}>
+              <div className="text-[11px] text-text-tertiary mt-0.5">
                 Variant: {c.thumbnail_label}
               </div>
             )}

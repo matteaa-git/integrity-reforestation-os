@@ -1,4 +1,4 @@
-# Instagram Growth OS
+# Integrity Social Media Machine
 
 Content production and paid-growth operating system for Integrity Reforestation.
 

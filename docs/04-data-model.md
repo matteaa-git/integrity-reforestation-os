@@ -22,19 +22,24 @@ campaigns ───────┤      │
 ## Tables
 
 ### assets
-Uploaded media files (images, video, audio).
+Indexed media files (images, video) from local asset libraries.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | kind | enum: image, video, audio | |
 | filename | varchar(512) | Original filename |
-| storage_url | text | Path or URL to stored file |
+| storage_url | text | Absolute path to file on local filesystem |
 | mime_type | varchar(128) | |
 | size_bytes | integer | |
-| width_px | integer | Nullable — not applicable to audio |
+| width_px | integer | Nullable — extracted via Pillow (images) or ffprobe (video) |
 | height_px | integer | Nullable |
-| duration_ms | integer | Nullable — for video/audio |
+| duration_ms | integer | Nullable — for video, extracted via ffprobe |
 | hash | varchar(64), indexed | SHA-256 hex digest — used for deduplication during directory indexing |
+| extension | varchar(16) | File extension including dot (e.g. ".jpg", ".mp4") |
+| relative_path | text | Path relative to the library root used during indexing |
+| category | varchar(64) | Nullable — top-level folder grouping (LIBRARY, INBOX, STAGING, etc.) inferred from path |
+| project | varchar(128) | Nullable — project/location name inferred from path (e.g. "OGK (Ogoki)", "Pic Forest") |
+| pillar | varchar(128) | Nullable — content pillar inferred from path (e.g. "Camp/Field", "Behind the Scenes") |
 
 ### content_briefs
 High-level creative direction before a draft is produced.

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Draft } from "@/lib/api";
 import { scheduleDraft } from "@/lib/api";
+import Button from "@/components/ui/Button";
 
 interface SchedulePanelProps {
   draft: Draft;
@@ -33,50 +34,30 @@ export default function SchedulePanel({ draft, onScheduled }: SchedulePanelProps
     }
   };
 
-  if (draft.status !== "approved") return null;
+  if (draft.status === "rejected" || draft.status === "scheduled") return null;
 
   return (
-    <div
-      style={{
-        padding: "1rem",
-        border: "1px solid #b8daff",
-        borderRadius: "8px",
-        background: "#f0f7ff",
-        marginBottom: "1rem",
-      }}
-    >
-      <h3 style={{ margin: "0 0 0.75rem", fontSize: "0.95rem" }}>Schedule Post</h3>
-      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "0.5rem" }}>
+    <div className="p-4 border border-info/30 rounded-xl bg-blue-50 mb-4">
+      <h3 className="text-sm font-semibold text-text-primary mb-3">Schedule Post</h3>
+      <div className="flex gap-2 flex-wrap mb-2">
         <input
           type="datetime-local"
           value={datetime}
           onChange={(e) => setDatetime(e.target.value)}
-          style={{ padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "0.85rem" }}
+          className="rounded-lg border border-border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
         />
         <input
           type="text"
           placeholder="Notes (optional)"
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          style={{ padding: "6px 10px", border: "1px solid #ccc", borderRadius: "4px", fontSize: "0.85rem", flex: 1, minWidth: "120px" }}
+          className="flex-1 min-w-[120px] rounded-lg border border-border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
         />
-        <button
-          onClick={handleSchedule}
-          disabled={!datetime || submitting}
-          style={{
-            padding: "6px 16px",
-            background: !datetime || submitting ? "#ccc" : "#004085",
-            color: "#fff",
-            border: "none",
-            borderRadius: "4px",
-            cursor: !datetime || submitting ? "default" : "pointer",
-            fontSize: "0.85rem",
-          }}
-        >
+        <Button onClick={handleSchedule} disabled={!datetime || submitting} size="sm">
           {submitting ? "Scheduling..." : "Schedule"}
-        </button>
+        </Button>
       </div>
-      {error && <div style={{ color: "#d32f2f", fontSize: "0.8rem" }}>{error}</div>}
+      {error && <div className="text-sm text-danger">{error}</div>}
     </div>
   );
 }

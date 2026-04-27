@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AdCreative, Asset, Draft } from "@/lib/api";
 import { createAdCreativeFromAsset, createAdCreativeFromDraft, fetchAssets, fetchDrafts } from "@/lib/api";
+import Button from "@/components/ui/Button";
 
 interface VariantBuilderProps {
   onCreated: (creative: AdCreative) => void;
@@ -64,130 +65,81 @@ export default function VariantBuilder({ onCreated, onClose }: VariantBuilderPro
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 10px",
-    border: "1px solid #ddd",
-    borderRadius: "4px",
-    fontSize: "0.85rem",
-    boxSizing: "border-box",
-  };
+  const inputClass = "w-full rounded-lg border border-border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary";
 
   const items = sourceType === "asset"
     ? assets.map((a) => ({ id: a.id, label: a.filename, sub: a.media_type }))
     : drafts.map((d) => ({ id: d.id, label: d.title, sub: `${d.format} — ${d.status}` }));
 
   return (
-    <div style={{
-      position: "fixed",
-      inset: 0,
-      background: "rgba(0,0,0,0.4)",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      zIndex: 1000,
-    }}>
-      <div style={{
-        background: "#fff",
-        borderRadius: "12px",
-        padding: "1.5rem",
-        width: "500px",
-        maxHeight: "80vh",
-        overflow: "auto",
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Create Ad Variant</h3>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem", color: "#888" }}>&times;</button>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+      <div
+        className="bg-surface rounded-2xl w-[500px] max-h-[80vh] flex flex-col overflow-hidden shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-text-primary">Create Ad Variant</h3>
+          <button onClick={onClose} className="text-text-tertiary hover:text-text-primary text-lg">&times;</button>
         </div>
 
-        {/* Source type toggle */}
-        <div style={{ display: "flex", gap: "4px", marginBottom: "1rem" }}>
-          {(["asset", "draft"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setSourceType(t)}
-              style={{
-                padding: "6px 16px",
-                background: sourceType === t ? "#0070f3" : "#eee",
-                color: sourceType === t ? "#fff" : "#333",
-                border: "none",
-                borderRadius: "20px",
-                cursor: "pointer",
-                fontSize: "0.8rem",
-                fontWeight: sourceType === t ? 600 : 400,
-              }}
-            >
-              From {t === "asset" ? "Asset" : "Draft"}
-            </button>
-          ))}
-        </div>
-
-        {/* Source list */}
-        {loading && <div style={{ color: "#888", padding: "1rem", textAlign: "center" }}>Loading...</div>}
-        {!loading && items.length === 0 && (
-          <div style={{ color: "#888", padding: "1rem", textAlign: "center" }}>
-            No {sourceType === "asset" ? "assets" : "drafts"} available.
-          </div>
-        )}
-        {!loading && items.length > 0 && (
-          <div style={{ maxHeight: "150px", overflow: "auto", border: "1px solid #e0e0e0", borderRadius: "6px", marginBottom: "1rem" }}>
-            {items.map((item) => (
-              <div
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                style={{
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  background: selectedId === item.id ? "#e8f4ff" : "transparent",
-                  borderBottom: "1px solid #f0f0f0",
-                }}
+        <div className="flex-1 overflow-y-auto p-5">
+          {/* Source type toggle */}
+          <div className="flex gap-1 mb-4">
+            {(["asset", "draft"] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setSourceType(t)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  sourceType === t
+                    ? "bg-primary text-white"
+                    : "bg-surface-secondary text-text-secondary border border-border hover:bg-surface"
+                }`}
               >
-                <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>{item.label}</div>
-                <div style={{ fontSize: "0.7rem", color: "#888" }}>{item.sub}</div>
-              </div>
+                From {t === "asset" ? "Asset" : "Draft"}
+              </button>
             ))}
           </div>
-        )}
 
-        {/* Creative fields */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "1rem" }}>
-          <input style={inputStyle} placeholder="Hook text..." value={hookText} onChange={(e) => setHookText(e.target.value)} />
-          <input style={inputStyle} placeholder="CTA text..." value={ctaText} onChange={(e) => setCtaText(e.target.value)} />
-          <input style={inputStyle} placeholder="Thumbnail / variant label..." value={thumbnailLabel} onChange={(e) => setThumbnailLabel(e.target.value)} />
-        </div>
+          {/* Source list */}
+          {loading && <div className="text-sm text-text-tertiary py-6 text-center">Loading...</div>}
+          {!loading && items.length === 0 && (
+            <div className="text-sm text-text-tertiary py-6 text-center">
+              No {sourceType === "asset" ? "assets" : "drafts"} available.
+            </div>
+          )}
+          {!loading && items.length > 0 && (
+            <div className="max-h-[150px] overflow-y-auto border border-border rounded-xl mb-4">
+              {items.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => setSelectedId(item.id)}
+                  className={`px-3 py-2 cursor-pointer border-b border-border last:border-b-0 transition-colors ${
+                    selectedId === item.id ? "bg-primary/5" : "hover:bg-surface-secondary"
+                  }`}
+                >
+                  <div className="text-sm font-medium text-text-primary">{item.label}</div>
+                  <div className="text-[11px] text-text-tertiary">{item.sub}</div>
+                </div>
+              ))}
+            </div>
+          )}
 
-        {error && <div style={{ color: "#d32f2f", fontSize: "0.8rem", marginBottom: "0.5rem" }}>{error}</div>}
+          {/* Creative fields */}
+          <div className="flex flex-col gap-2 mb-4">
+            <input className={inputClass} placeholder="Hook text..." value={hookText} onChange={(e) => setHookText(e.target.value)} />
+            <input className={inputClass} placeholder="CTA text..." value={ctaText} onChange={(e) => setCtaText(e.target.value)} />
+            <input className={inputClass} placeholder="Thumbnail / variant label..." value={thumbnailLabel} onChange={(e) => setThumbnailLabel(e.target.value)} />
+          </div>
 
-        <div style={{ display: "flex", gap: "8px" }}>
-          <button
-            onClick={handleCreate}
-            disabled={!selectedId || creating}
-            style={{
-              padding: "8px 20px",
-              background: !selectedId || creating ? "#ccc" : "#0070f3",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              cursor: !selectedId || creating ? "default" : "pointer",
-              fontSize: "0.85rem",
-            }}
-          >
-            {creating ? "Creating..." : "Create Variant"}
-          </button>
-          <button
-            onClick={onClose}
-            style={{
-              padding: "8px 20px",
-              background: "#eee",
-              color: "#333",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "0.85rem",
-            }}
-          >
-            Cancel
-          </button>
+          {error && <div className="text-sm text-danger mb-3">{error}</div>}
+
+          <div className="flex gap-2">
+            <Button onClick={handleCreate} disabled={!selectedId || creating}>
+              {creating ? "Creating..." : "Create Variant"}
+            </Button>
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          </div>
         </div>
       </div>
     </div>

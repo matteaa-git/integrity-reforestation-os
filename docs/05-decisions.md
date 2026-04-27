@@ -35,17 +35,26 @@
 
 **Context:** SQLModel was considered but lacks mature support for complex relationships, JSONB, and check constraints needed by this schema. SQLAlchemy 2.0's `Mapped` + `mapped_column` API provides comparable type safety.
 
-## ADR-004: Asset Library — In-Memory Store (2026-03-12)
+## ADR-004: Asset Library — In-Memory Store + Integrity_AssetLibrary (2026-03-12, updated 2026-03-13)
 
-**Decision:** Use an in-memory Python dict as the asset store for initial development. No PostgreSQL dependency required to run or test.
+**Decision:** Use an in-memory Python dict as the asset store for initial development. No PostgreSQL dependency required to run or test. Default indexing source is `~/Integrity_AssetLibrary`.
 
 | Choice | Rationale |
 |--------|-----------|
 | In-memory store | Repo stays runnable without PostgreSQL; swap to real DB by replacing `store.py` with SQLAlchemy session calls |
 | Local file paths | Assets reference local filesystem paths; no cloud storage yet |
-| Directory indexing | `POST /assets/index-directory` scans a local path and registers media files by extension |
+| Default library root: `~/Integrity_AssetLibrary` | The real Integrity Reforestation asset library. `POST /assets/index-directory` defaults to this path when no directory is specified |
+| Recursive scanning with junk filtering | Skips `.DS_Store`, AppleDouble `._` files, `.venv`, `__pycache__`, `state`, `LOGS`, `AGENTS` directories |
+| SHA-256 hash deduplication | Prevents re-indexing the same file even if it appears at multiple paths or is re-indexed repeatedly |
+| Library metadata inference from path | `category`, `project`, `pillar` are inferred from folder structure with high-confidence rules only. Known projects: OGK, PICFOREST, NAGAGAMI, WRIVER, KEN, ALG |
+| Pillow for image dimensions | Extracts width/height from image files; fails gracefully |
+| ffprobe for video metadata | Extracts width/height/duration from video files; fails gracefully |
 | Pydantic schemas separate from DB models | API contracts (`app/schemas/`) are decoupled from SQLAlchemy models — allows the store layer to change independently |
 | CORS enabled for localhost:3000 | Next.js dev server calls the API cross-origin |
+
+**Supported file types:**
+- Images: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`, `.tiff`, `.tif`, `.svg`
+- Videos: `.mp4`, `.mov`, `.avi`, `.mkv`, `.webm`, `.m4v`
 
 **Context:** PostgreSQL is planned but not yet running. The in-memory store lets the full asset workflow (index, browse, filter, select) work end-to-end immediately. The API shape is final — only the persistence layer will change.
 

@@ -210,3 +210,61 @@
 - No performance reporting or metrics
 - No AI-generated hooks or CTAs
 - No recommendation engine
+
+## 2026-03-13 — Integrity_AssetLibrary Integration
+
+### What was done
+
+**Asset Indexer (`apps/api/app/services/asset_indexer.py`) — full rewrite:**
+- Default library root: `~/Integrity_AssetLibrary` — used when no directory is specified
+- Recursive scanning with junk file filtering (`.DS_Store`, AppleDouble `._` files, system dirs)
+- Skips non-media directories: `.venv`, `__pycache__`, `node_modules`, `.git`, `state`, `LOGS`, `AGENTS`
+- Image metadata extraction via Pillow (width/height) — fails gracefully
+- Video metadata extraction via ffprobe (width/height/duration) — fails gracefully with 15s timeout
+- Library metadata inference from file path:
+  - `category`: top-level folder (LIBRARY, INBOX, STAGING, DESIGNS, CAMPAIGNS, etc.)
+  - `project`: known project/location codes (OGK→Ogoki, PICFOREST→Pic Forest, NAGAGAMI, WRIVER→Wabigoon River, KEN→Kenogami, ALG→Algoma)
+  - `pillar`: content pillar hints (CAMP→Camp/Field, BTS→Behind the Scenes, APPAREL→Apparel/Merch, DESIGNS→Design, LAND→Landscape)
+  - `relative_path`: path relative to library root
+  - `extension`: file extension
+- SHA-256 hash deduplication — re-indexing produces 0 new assets
+
+**Asset schemas (`apps/api/app/schemas/asset.py`):**
+- Added fields: `extension`, `relative_path`, `category`, `project`, `pillar`
+- `IndexDirectoryRequest.directory` is now optional (defaults to library root)
+- `IndexDirectoryResponse` now returns: `indexed_count`, `skipped_count`, `duplicate_count`, `invalid_count`, `scanned_root`, `errors`
+
+**Store (`apps/api/app/store.py`):**
+- `create_asset` stores new fields: `extension`, `relative_path`, `category`, `project`, `pillar`
+
+**Asset routes (`apps/api/app/routes/assets.py`):**
+- `POST /assets/index-directory` now passes all metadata fields to store
+- Caps error list at 50 entries to prevent huge responses
+
+**Frontend (`apps/web`):**
+- `lib/api.ts`: Added `extension`, `relative_path`, `category`, `project`, `pillar` to `Asset` interface; `indexDirectory()` now accepts optional path; added `IndexDirectoryResponse` type
+- `AssetPreview.tsx`: Shows library metadata section (relative path, category, project, pillar) with badges
+- `assets/page.tsx`: Shows library root and "Connected" badge; primary "Index Integrity Asset Library" button; index result feedback with badges for indexed/skipped/duplicates/errors; custom path as secondary action
+
+**Documentation:**
+- Updated `docs/04-data-model.md` — new asset columns documented
+- Updated `docs/05-decisions.md` — ADR-004 expanded with library connection details, supported file types, metadata inference rules
+- Updated `docs/06-build-log.md` — this entry
+
+### Verified against ~/Integrity_AssetLibrary
+- First index: 599 unique assets indexed, 1069 duplicates skipped, 352 non-media files skipped, 0 errors
+- Re-index: 0 new assets, 1668 duplicates skipped — hash deduplication confirmed
+- Image metadata: width/height extracted (e.g. 3392×5056)
+- Video metadata: width/height/duration extracted (e.g. 3840×2160, 2.88s)
+- Project inference: "OGK (Ogoki)", "Pic Forest" correctly identified from path
+- Pillar inference: "Behind the Scenes", "Camp/Field" correctly identified from path
+- Category inference: "INBOX", "LIBRARY", "CAMPAIGNS", "DESIGNS" correctly identified
+- 25 backend tests pass
+- Frontend build clean — all 12 pages compile
+
+### What's NOT included
+- No real image/video thumbnails (still placeholder icons)
+- No AI tagging
+- No cloud storage
+- No pagination (all assets loaded at once — works for current library size)
+- No file-system watcher / auto-reindex
