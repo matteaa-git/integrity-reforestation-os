@@ -96,6 +96,12 @@ export default function AdminPage() {
       setUserEmail(profile?.email ?? user.email ?? "");
       setUserName(profile?.full_name ?? user.email ?? "");
 
+      // Redirect mobile/tablet users to mobile view
+      if (window.innerWidth < 1024) {
+        router.replace("/admin/mobile");
+        return;
+      }
+
       // Default section based on role
       const allowed = ROLE_PERMISSIONS[role];
       if (!allowed.includes("dashboard")) setActiveSection(allowed[0]);

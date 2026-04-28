@@ -1,7 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/adminDb";
+import { type UserRole, ROLE_PERMISSIONS } from "@/lib/roles";
 
 import MobileAdminShell      from "@/components/admin/MobileAdminShell";
 import AdminDashboard         from "@/components/admin/AdminDashboard";
@@ -22,14 +25,33 @@ import TrainingGuidesCenter   from "@/components/admin/TrainingGuidesCenter";
 import InsuranceCenter        from "@/components/admin/InsuranceCenter";
 import ReceiptsCenter         from "@/components/admin/ReceiptsCenter";
 import ProjectCashFlowCenter  from "@/components/admin/ProjectCashFlowCenter";
+import HSProgramCenter        from "@/components/admin/HSProgramCenter";
 
 import type { AdminSection, Employee } from "@/app/admin/page";
 
 export default function MobileAdminPage() {
-  const [activeSection, setActiveSection] = useState<AdminSection>("dashboard");
+  const router = useRouter();
+  const supabase = createClient();
+  const [userRole, setUserRole] = useState<UserRole>("crew_boss");
+  const [authLoading, setAuthLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState<AdminSection>("production");
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [employees, setEmployees] = useState<Employee[]>([]);
+
+  useEffect(() => {
+    async function loadSession() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { router.replace("/login"); return; }
+      const { data: roleData } = await supabase.rpc("get_my_role");
+      const role = (roleData as UserRole) ?? "crew_boss";
+      setUserRole(role);
+      const allowed = ROLE_PERMISSIONS[role];
+      if (!allowed.includes(activeSection)) setActiveSection(allowed[0]);
+      setAuthLoading(false);
+    }
+    loadSession();
+  }, []);
 
   useEffect(() => {
     seedEmployeesData().then(() =>
@@ -117,12 +139,21 @@ export default function MobileAdminPage() {
       case "insurance":        return <InsuranceCenter />;
       case "receipts":         return <ReceiptsCenter />;
       case "cashflow":         return <ProjectCashFlowCenter />;
+      case "health-safety":    return <HSProgramCenter />;
       default:                 return null;
     }
   }
 
+  if (authLoading) {
+    return (
+      <div style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", background: "#0d0d0d" }}>
+        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>Loading…</div>
+      </div>
+    );
+  }
+
   return (
-    <MobileAdminShell activeSection={activeSection} onNavigate={handleNavigate}>
+    <MobileAdminShell activeSection={activeSection} onNavigate={handleNavigate} userRole={userRole}>
       {renderContent()}
     </MobileAdminShell>
   );

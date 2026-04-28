@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { AdminSection } from "@/app/admin/page";
+import { type UserRole, ROLE_PERMISSIONS } from "@/lib/roles";
 
 // ── Section titles ────────────────────────────────────────────────────────────
 
@@ -29,16 +30,16 @@ const SECTION_TITLES: Record<AdminSection, string> = {
   "my-earnings":     "My Earnings",
 };
 
-// ── Bottom tab bar (primary 4 + More) ────────────────────────────────────────
+// ── All possible bottom tabs (filtered by role at render time) ────────────────
 
-const BOTTOM_TABS: { id: AdminSection; label: string; icon: string }[] = [
-  { id: "dashboard",  label: "Home",    icon: "▦" },
-  { id: "employees",  label: "People",  icon: "◉" },
-  { id: "production", label: "Field",   icon: "⬡" },
-  { id: "receipts",   label: "Finance", icon: "◱" },
+const ALL_BOTTOM_TABS: { id: AdminSection; label: string; icon: string }[] = [
+  { id: "dashboard",    label: "Home",       icon: "▦" },
+  { id: "employees",    label: "People",     icon: "◉" },
+  { id: "production",   label: "Field",      icon: "⬡" },
+  { id: "receipts",     label: "Finance",    icon: "◱" },
+  { id: "compliance",   label: "Safety",     icon: "☑" },
+  { id: "health-safety", label: "H&S",       icon: "⚕" },
 ];
-
-const BOTTOM_TAB_IDS = new Set(BOTTOM_TABS.map(t => t.id));
 
 // ── More drawer sections ──────────────────────────────────────────────────────
 
@@ -93,11 +94,20 @@ const MORE_GROUPS: { group: string; items: { id: AdminSection; label: string; ic
 interface Props {
   activeSection: AdminSection;
   onNavigate: (section: AdminSection) => void;
+  userRole?: UserRole;
   children: React.ReactNode;
 }
 
-export default function MobileAdminShell({ activeSection, onNavigate, children }: Props) {
+export default function MobileAdminShell({ activeSection, onNavigate, userRole = "admin", children }: Props) {
   const [showMore, setShowMore] = useState(false);
+
+  const allowed = ROLE_PERMISSIONS[userRole] ?? ROLE_PERMISSIONS["crew_boss"];
+  const BOTTOM_TABS = ALL_BOTTOM_TABS.filter(t => allowed.includes(t.id)).slice(0, 4);
+  const BOTTOM_TAB_IDS = new Set(BOTTOM_TABS.map(t => t.id));
+  const visibleMoreGroups = MORE_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(i => allowed.includes(i.id)) }))
+    .filter(g => g.items.length > 0);
+  const hasMore = visibleMoreGroups.some(g => g.items.length > 0);
 
   const isMoreSection = !BOTTOM_TAB_IDS.has(activeSection);
   const title = SECTION_TITLES[activeSection];
@@ -212,8 +222,8 @@ export default function MobileAdminShell({ activeSection, onNavigate, children }
           );
         })}
 
-        {/* More button */}
-        <button
+        {/* More button — only shown if there are extra sections */}
+        {hasMore && <button
           onClick={() => setShowMore(v => !v)}
           style={{
             flex: 1, display: "flex", flexDirection: "column",
@@ -241,7 +251,7 @@ export default function MobileAdminShell({ activeSection, onNavigate, children }
           }}>
             More
           </span>
-        </button>
+        </button>}
       </div>
 
       {/* ── More drawer ───────────────────────────────────────────────────── */}
@@ -288,7 +298,7 @@ export default function MobileAdminShell({ activeSection, onNavigate, children }
             </div>
 
             {/* Section groups */}
-            {MORE_GROUPS.map(group => (
+            {visibleMoreGroups.map(group => (
               <div key={group.group}>
                 <div style={{
                   fontSize: 10, fontWeight: 700, textTransform: "uppercase",
