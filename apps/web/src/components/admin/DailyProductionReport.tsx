@@ -621,7 +621,7 @@ export default function DailyProductionReport({ employees }: Props) {
       const cpp     = gross > 0 ? gross * 0.0595 : 0;
       const ei      = gross > 0 ? gross * 0.0166 : 0;
       const tax     = p(emp.incomeTax); const addl = p(emp.additionalEarnings);
-      empRows.push({ name: emp.name, empId, role: emp.rateType === "day" ? "Day Rate" : "Hourly", trees: 0, gross: earnings, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
+      empRows.push({ name: emp.name, empId, role: emp.rateType === "dayrate" ? "Day Rate" : "Hourly", trees: 0, gross: earnings, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
     }
 
     const totGross = empRows.reduce((s, r) => s + r.gross, 0);
