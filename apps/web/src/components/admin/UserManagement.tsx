@@ -59,11 +59,11 @@ export default function UserManagement() {
 
   async function loadProfiles() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, email, full_name, role, created_at")
-      .order("created_at", { ascending: true });
-    if (!error && data) setProfiles(data as Profile[]);
+    const res = await fetch("/api/admin/users");
+    if (res.ok) {
+      const data = await res.json();
+      setProfiles(data as Profile[]);
+    }
     setLoading(false);
   }
 
