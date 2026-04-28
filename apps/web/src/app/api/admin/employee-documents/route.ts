@@ -1,12 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
-const adminSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function GET(req: NextRequest) {
+  const adminSupabase = getClient();
   const employeeName = req.nextUrl.searchParams.get("employee");
   const category     = req.nextUrl.searchParams.get("category");
 
@@ -33,6 +36,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const adminSupabase = getClient();
   const { storagePath } = await req.json();
   if (!storagePath) {
     return NextResponse.json({ error: "Missing storagePath" }, { status: 400 });
