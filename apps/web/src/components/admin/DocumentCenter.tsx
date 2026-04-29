@@ -168,17 +168,16 @@ export default function DocumentCenter({ employees, userRole = "admin" }: Docume
     let size = "—";
 
     if (uploadFile) {
-      const ext  = uploadFile.name.split(".").pop() ?? "bin";
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("documents")
-        .upload(path, uploadFile, { cacheControl: "3600", upsert: false });
-      if (upErr) {
-        showToast(`Upload failed: ${upErr.message}`, "error");
+      const fd = new FormData();
+      fd.append("file", uploadFile);
+      const res = await fetch("/api/admin/upload-document", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) {
+        showToast(`Upload failed: ${json.error ?? res.status}`, "error");
         setUploading(false);
         return;
       }
-      storagePath = path;
+      storagePath = json.path;
       size = formatSize(uploadFile.size);
     }
 
@@ -253,21 +252,16 @@ export default function DocumentCenter({ employees, userRole = "admin" }: Docume
     let hasFile     = editTarget.has_file;
 
     if (editFile) {
-      const ext  = editFile.name.split(".").pop() ?? "bin";
-      const path = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("documents")
-        .upload(path, editFile, { cacheControl: "3600", upsert: false });
-      if (upErr) {
-        showToast(`Upload failed: ${upErr.message}`, "error");
+      const fd = new FormData();
+      fd.append("file", editFile);
+      const res = await fetch("/api/admin/upload-document", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) {
+        showToast(`Upload failed: ${json.error ?? res.status}`, "error");
         setEditing(false);
         return;
       }
-      // Delete old file
-      if (editTarget.storage_path) {
-        await supabase.storage.from("documents").remove([editTarget.storage_path]);
-      }
-      storagePath = path;
+      storagePath = json.path;
       size = formatSize(editFile.size);
       hasFile = true;
     }
