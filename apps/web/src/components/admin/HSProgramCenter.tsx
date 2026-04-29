@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4001";
 
@@ -12,6 +13,7 @@ interface HSDoc {
   category: string;
   doc_type: "policy" | "form";
   exists: boolean;
+  storage_path?: string;
 }
 
 interface Assignment {
@@ -718,13 +720,13 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 
 // ── Document preview ──────────────────────────────────────────────────────────
 
-function PreviewModal({ doc, onClose, onDownload }: {
+function PreviewModal({ doc, previewUrl, onClose, onDownload }: {
   doc: HSDoc;
+  previewUrl: string;
   onClose: () => void;
   onDownload: () => void;
 }) {
   const isPdf = doc.filename.toLowerCase().endsWith(".pdf");
-  const previewUrl = `${API_BASE}/hs/documents/${doc.id}/preview`;
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
@@ -891,7 +893,10 @@ function AssignModal({ doc, onClose, onAssigned }: {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function HSProgramCenter() {
+export default function HSProgramCenter({ userRole = "admin" }: { userRole?: string }) {
+  const isAdmin = userRole === "admin" || userRole === "supervisor";
+  const supabase = createClient();
+
   const [tab, setTab] = useState<Tab>("library");
   const [docs, setDocs] = useState<HSDoc[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -903,14 +908,35 @@ export default function HSProgramCenter() {
 
   const [fillDoc, setFillDoc] = useState<HSDoc | null>(null);
   const [previewDoc, setPreviewDoc] = useState<HSDoc | null>(null);
+  const [previewSignedUrl, setPreviewSignedUrl] = useState<string>("");
   const [assignDoc, setAssignDoc] = useState<HSDoc | null>(null);
   const [viewSub, setViewSub] = useState<Submission | null>(null);
 
+  // Upload state
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploadName, setUploadName] = useState("");
+  const [uploadCategory, setUploadCategory] = useState("Administrative & General");
+  const [uploadDocType, setUploadDocType] = useState<"policy" | "form">("policy");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadFileRef = useRef<HTMLInputElement>(null);
+
   const fetchDocs = useCallback(async () => {
     try {
-      const r = await fetch(`${API_BASE}/hs/documents`);
-      const d = await r.json();
-      setDocs(d.documents || []);
+      const { data, error } = await supabase
+        .from("hs_documents")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!error && data) {
+        setDocs(data.map((row: Record<string, unknown>) => ({
+          id:           String(row.id),
+          filename:     String(row.filename),
+          category:     String(row.category),
+          doc_type:     (row.doc_type as "policy" | "form") ?? "policy",
+          exists:       Boolean(row.has_file),
+          storage_path: row.storage_path ? String(row.storage_path) : undefined,
+        })));
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -948,11 +974,50 @@ export default function HSProgramCenter() {
     await fetchAssignments();
   };
 
-  const handleDownload = (doc: HSDoc) => {
+  const handleDownload = async (doc: HSDoc) => {
+    if (!doc.storage_path) return;
+    const res = await fetch(`/api/admin/document-url?path=${encodeURIComponent(doc.storage_path)}`);
+    if (!res.ok) return;
+    const { url } = await res.json();
     const a = document.createElement("a");
-    a.href = `${API_BASE}/hs/documents/${doc.id}/file`;
-    a.download = doc.filename;
-    a.click();
+    a.href = url; a.download = doc.filename; a.click();
+  };
+
+  const handleUpload = async () => {
+    if (!uploadName.trim()) return;
+    setUploading(true);
+    let storagePath: string | null = null;
+    if (uploadFile) {
+      const fd = new FormData();
+      fd.append("file", uploadFile);
+      const res = await fetch("/api/admin/upload-document", { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) { setUploading(false); return; }
+      storagePath = json.path;
+    }
+    const { data, error } = await supabase.from("hs_documents").insert({
+      filename:     uploadName.trim(),
+      category:     uploadCategory,
+      doc_type:     uploadDocType,
+      has_file:     !!storagePath,
+      storage_path: storagePath,
+    }).select().single();
+    if (!error && data) {
+      setDocs(prev => [{
+        id: String(data.id), filename: String(data.filename),
+        category: String(data.category), doc_type: data.doc_type as "policy" | "form",
+        exists: Boolean(data.has_file), storage_path: data.storage_path ?? undefined,
+      }, ...prev]);
+    }
+    setShowUpload(false);
+    setUploadName(""); setUploadCategory("Administrative & General");
+    setUploadDocType("policy"); setUploadFile(null);
+    setUploading(false);
+  };
+
+  const handleDeleteDoc = async (doc: HSDoc) => {
+    await supabase.from("hs_documents").delete().eq("id", doc.id);
+    setDocs(prev => prev.filter(d => d.id !== doc.id));
   };
 
   const handleSubmit = async (formType: string, submittedBy: string, role: string, data: Record<string, unknown>, notes: string) => {
@@ -982,7 +1047,67 @@ export default function HSProgramCenter() {
             {docs.length} documents · {submissions.length} submissions · {assignments.filter(a => a.status === "pending").length} pending assignments
           </div>
         </div>
+        {isAdmin && (
+          <button onClick={() => setShowUpload(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-90 transition-all"
+            style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+            + Add Document
+          </button>
+        )}
       </div>
+
+      {/* Upload modal */}
+      {showUpload && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-text-primary">Add H&amp;S Document</div>
+              <button onClick={() => setShowUpload(false)} className="text-text-tertiary hover:text-text-primary text-xl leading-none">×</button>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1">Document Name *</label>
+              <input value={uploadName} onChange={e => setUploadName(e.target.value)} placeholder="e.g. Fire Safety Policy 2026"
+                className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary/50" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1">Category</label>
+                <select value={uploadCategory} onChange={e => setUploadCategory(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50">
+                  {CATEGORIES.filter(c => c !== "All").map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1">Type</label>
+                <select value={uploadDocType} onChange={e => setUploadDocType(e.target.value as "policy" | "form")}
+                  className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50">
+                  <option value="policy">Policy</option>
+                  <option value="form">Form</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-text-tertiary mb-1">File (optional)</label>
+              <input ref={uploadFileRef} type="file" className="hidden" onChange={e => setUploadFile(e.target.files?.[0] ?? null)} />
+              <button onClick={() => uploadFileRef.current?.click()}
+                className="w-full px-3 py-2 text-xs border border-dashed border-border rounded-lg text-text-tertiary hover:border-primary/50 hover:text-text-primary transition-colors text-left">
+                {uploadFile ? uploadFile.name : "Click to attach file…"}
+              </button>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => setShowUpload(false)}
+                className="flex-1 px-3 py-2 text-xs border border-border rounded-lg text-text-secondary hover:bg-surface-secondary transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleUpload} disabled={!uploadName.trim() || uploading}
+                className="flex-1 px-3 py-2 text-xs font-semibold rounded-lg transition-all disabled:opacity-40"
+                style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+                {uploading ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-border">
@@ -1077,7 +1202,12 @@ export default function HSProgramCenter() {
                     {/* Actions row 1 */}
                     <div className="flex gap-1.5 mt-auto">
                       <button
-                        onClick={() => setPreviewDoc(doc)}
+                        onClick={async () => {
+                          if (!doc.storage_path) return;
+                          const res = await fetch(`/api/admin/document-url?path=${encodeURIComponent(doc.storage_path)}`);
+                          if (res.ok) { const { url } = await res.json(); setPreviewSignedUrl(url); }
+                          setPreviewDoc(doc);
+                        }}
                         disabled={!doc.exists}
                         className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg border border-border bg-surface text-text-secondary hover:bg-surface-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
@@ -1093,12 +1223,18 @@ export default function HSProgramCenter() {
                     </div>
                     {/* Actions row 2 */}
                     <div className="flex gap-1.5">
-                      <button
+                      {isAdmin && <button
                         onClick={() => setAssignDoc(doc)}
                         className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg border border-border bg-surface-secondary text-text-secondary hover:bg-surface-tertiary transition-colors"
                       >
                         ◉ Assign
-                      </button>
+                      </button>}
+                      {isAdmin && <button
+                        onClick={() => handleDeleteDoc(doc)}
+                        className="py-1.5 px-2 text-[11px] font-semibold rounded-lg border border-border bg-surface-secondary text-text-tertiary hover:text-red-400 transition-colors"
+                      >
+                        ✕
+                      </button>}
                       {canFill && (
                         <button onClick={() => setFillDoc(doc)}
                           className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg transition-colors"
@@ -1229,6 +1365,7 @@ export default function HSProgramCenter() {
       {previewDoc && (
         <PreviewModal
           doc={previewDoc}
+          previewUrl={previewSignedUrl}
           onClose={() => setPreviewDoc(null)}
           onDownload={() => handleDownload(previewDoc)}
         />

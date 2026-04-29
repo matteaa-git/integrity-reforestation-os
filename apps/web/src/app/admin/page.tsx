@@ -226,7 +226,7 @@ export default function AdminPage() {
       case "my-earnings":
         return <PlanterPortal tab="earnings" />;
       case "health-safety":
-        return <HSProgramCenter />;
+        return <HSProgramCenter userRole={userRole} />;
       case "file-ingest":
         return <FileIngest />;
       default:

@@ -142,7 +142,7 @@ export default function MobileAdminPage() {
       case "insurance":        return <InsuranceCenter />;
       case "receipts":         return <ReceiptsCenter userRole={userRole} userName={userName} />;
       case "cashflow":         return <ProjectCashFlowCenter />;
-      case "health-safety":    return <HSProgramCenter />;
+      case "health-safety":    return <HSProgramCenter userRole={userRole} />;
       default:                 return null;
     }
   }
