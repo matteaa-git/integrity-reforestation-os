@@ -127,7 +127,7 @@ export default function MobileAdminPage() {
             onUpdateEmployee={handleUpdateEmployee}
           />
         );
-      case "documents":        return <DocumentCenter employees={employees} />;
+      case "documents":        return <DocumentCenter employees={employees} userRole={userRole} />;
       case "signatures":       return <SignatureCenter employees={employees} />;
       case "training":         return <TrainingSafetyCenter employees={employees} />;
       case "compliance":       return <ComplianceCenter employees={employees} />;

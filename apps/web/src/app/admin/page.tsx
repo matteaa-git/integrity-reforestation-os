@@ -190,7 +190,7 @@ export default function AdminPage() {
           />
         );
       case "documents":
-        return <DocumentCenter employees={employees} />;
+        return <DocumentCenter employees={employees} userRole={userRole} />;
       case "signatures":
         return <SignatureCenter employees={employees} />;
       case "training":

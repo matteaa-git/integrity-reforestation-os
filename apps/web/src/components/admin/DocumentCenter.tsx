@@ -61,15 +61,17 @@ function formatSize(bytes: number): string {
 
 interface DocumentCenterProps {
   employees: Employee[];
+  userRole?: string;
 }
 
-export default function DocumentCenter({ employees }: DocumentCenterProps) {
+export default function DocumentCenter({ employees, userRole = "admin" }: DocumentCenterProps) {
+  const isCrewBoss = userRole === "crew_boss";
   const supabase = createClient();
 
   const [docs, setDocs]     = useState<Doc[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [categoryFilter, setCategoryFilter] = useState<DocCategoryFilter>("all");
+  const [categoryFilter, setCategoryFilter] = useState<DocCategoryFilter>(isCrewBoss ? "health-safety" : "all");
   const [statusFilter,   setStatusFilter]   = useState<DocStatusFilter>("all");
   const [sortField, setSortField] = useState<SortField>("date_added");
   const [sortDir,   setSortDir]   = useState<"asc" | "desc">("desc");
@@ -381,28 +383,28 @@ export default function DocumentCenter({ employees }: DocumentCenterProps) {
           value={localSearch} onChange={e => setLocalSearch(e.target.value)}
           className="text-xs border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary/50 w-48"
         />
-        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as DocCategoryFilter)}
+        {!isCrewBoss && <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as DocCategoryFilter)}
           className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-surface text-text-secondary focus:outline-none focus:border-primary/50">
           <option value="all">All categories</option>
           {(Object.keys(CATEGORY_LABELS) as DocCategory[]).map(k => (
             <option key={k} value={k}>{CATEGORY_LABELS[k]}</option>
           ))}
-        </select>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as DocStatusFilter)}
+        </select>}
+        {!isCrewBoss && <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as DocStatusFilter)}
           className="text-xs border border-border rounded-lg px-2.5 py-1.5 bg-surface text-text-secondary focus:outline-none focus:border-primary/50">
           <option value="all">All statuses</option>
           <option value="signed">Signed</option>
           <option value="pending">Pending</option>
           <option value="expired">Expired</option>
           <option value="draft">Draft</option>
-        </select>
+        </select>}
         <div className="flex-1" />
         <div className="text-xs text-text-tertiary">{filtered.length} document{filtered.length !== 1 ? "s" : ""}</div>
-        <button onClick={() => setShowUpload(true)}
+        {!isCrewBoss && <button onClick={() => setShowUpload(true)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-90 transition-all"
           style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
           + Upload Document
-        </button>
+        </button>}
       </div>
 
       {/* Table */}
@@ -471,10 +473,10 @@ export default function DocumentCenter({ employees }: DocumentCenterProps) {
                         className="text-[11px] font-semibold hover:underline" style={{ color: "var(--color-info)" }}>
                         Send
                       </button>
-                      <span className="text-border">|</span>
+                      {!isCrewBoss && <><span className="text-border">|</span>
                       <button onClick={() => openEdit(doc)} className="text-[11px] text-text-secondary hover:text-text-primary">Edit</button>
                       <span className="text-border">|</span>
-                      <button onClick={() => setDeleteTarget(doc)} className="text-[11px] text-text-tertiary hover:text-danger">Delete</button>
+                      <button onClick={() => setDeleteTarget(doc)} className="text-[11px] text-text-tertiary hover:text-danger">Delete</button></>}
                     </div>
                   </td>
                 </tr>
