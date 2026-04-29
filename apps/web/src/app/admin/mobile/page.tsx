@@ -136,7 +136,7 @@ export default function MobileAdminPage() {
       case "projects":         return <ProjectsCenter />;
       case "media":            return <MediaLibrary employees={employees} />;
       case "operations":       return <OperationsCenter employees={employees} />;
-      case "production":       return <DailyProductionReport employees={employees} />;
+      case "production":       return <DailyProductionReport employees={employees} userRole={userRole} />;
       case "assets":           return <AssetsCenter />;
       case "training-guides":  return <TrainingGuidesCenter />;
       case "insurance":        return <InsuranceCenter />;

@@ -145,9 +145,9 @@ interface SavedSession {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-interface Props { employees: Employee[] }
+interface Props { employees: Employee[]; userRole?: string }
 
-export default function DailyProductionReport({ employees }: Props) {
+export default function DailyProductionReport({ employees, userRole = "admin" }: Props) {
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("entry");
   const [rates, setRates]     = useState<SpeciesRate[]>([]);
@@ -1510,7 +1510,9 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
       {/* Tab bar */}
       <div className="flex items-center border-b border-border px-6 bg-surface shrink-0">
-        {(["entry", "supervisor", "daily", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[]).map(t => (
+        {(["entry", "supervisor", "daily", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
+          .filter(t => userRole === "crew_boss" ? t === "entry" : true)
+          .map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-5 py-3 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
               tab === t ? "border-primary text-primary" : "border-transparent text-text-secondary hover:text-text-primary"
