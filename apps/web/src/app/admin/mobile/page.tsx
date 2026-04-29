@@ -103,6 +103,8 @@ export default function MobileAdminPage() {
           employees={employees}
           onBack={handleBackToList}
           onUpdateEmployee={handleUpdateEmployee}
+          userRole={userRole}
+          userName={userName}
         />
       );
     }
@@ -125,6 +127,8 @@ export default function MobileAdminPage() {
             onAddEmployee={handleAddEmployee}
             onDeleteEmployee={handleDeleteEmployee}
             onUpdateEmployee={handleUpdateEmployee}
+            userRole={userRole}
+            userName={userName}
           />
         );
       case "documents":        return <DocumentCenter employees={employees} userRole={userRole} />;

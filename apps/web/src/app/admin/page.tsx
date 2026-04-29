@@ -165,6 +165,8 @@ export default function AdminPage() {
           employees={employees}
           onBack={handleBackToList}
           onUpdateEmployee={handleUpdateEmployee}
+          userRole={userRole}
+          userName={userName}
         />
       );
     }
@@ -187,6 +189,8 @@ export default function AdminPage() {
             onAddEmployee={handleAddEmployee}
             onDeleteEmployee={handleDeleteEmployee}
             onUpdateEmployee={handleUpdateEmployee}
+            userRole={userRole}
+            userName={userName}
           />
         );
       case "documents":

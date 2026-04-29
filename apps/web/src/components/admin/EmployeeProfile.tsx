@@ -68,14 +68,19 @@ const COMP_STATUS: Record<string, { label: string; style: React.CSSProperties }>
   pending:         { label: "Pending",       style: { background: "rgba(251,183,0,0.12)",  color: "var(--color-warning)" } },
 };
 
+interface HSDoc { id: string; filename: string; category: string; doc_type: string; storage_path?: string; }
+
 interface EmployeeProfileProps {
   employee: Employee;
   employees: Employee[];
   onBack: () => void;
   onUpdateEmployee: (emp: Employee) => void;
+  userRole?: string;
+  userName?: string;
 }
 
-export default function EmployeeProfile({ employee, employees, onBack, onUpdateEmployee }: EmployeeProfileProps) {
+export default function EmployeeProfile({ employee, employees, onBack, onUpdateEmployee, userRole = "admin", userName = "" }: EmployeeProfileProps) {
+  const isCrewBoss = userRole === "crew_boss";
   const supabase = createClient();
   const [activeTab, setActiveTab] = useState<ProfileTab>("overview");
   const [localEmp, setLocalEmp]   = useState<Employee>(employee);
@@ -119,6 +124,15 @@ export default function EmployeeProfile({ employee, employees, onBack, onUpdateE
   const [sending, setSending]             = useState(false);
   const [toast, setToast]                 = useState<string | null>(null);
   const [toastType, setToastType]         = useState<"success" | "error">("success");
+
+  // H&S assignment modal
+  const [showHSModal, setShowHSModal]     = useState(false);
+  const [hsDocs, setHsDocs]               = useState<HSDoc[]>([]);
+  const [hsDocId, setHsDocId]             = useState("");
+  const [hsDueDate, setHsDueDate]         = useState("");
+  const [hsNote, setHsNote]               = useState("");
+  const [hsAssigning, setHsAssigning]     = useState(false);
+  const [hsAssignDone, setHsAssignDone]   = useState(false);
 
   useEffect(() => {
     getAllDocuments().then(setDocCenterDocs);
@@ -201,6 +215,40 @@ export default function EmployeeProfile({ employee, employees, onBack, onUpdateE
     }
   }
 
+  async function openHSModal() {
+    setHsDocId("");
+    setHsDueDate("");
+    setHsNote("");
+    setHsAssignDone(false);
+    setShowHSModal(true);
+    if (hsDocs.length === 0) {
+      const db = (await import("@/lib/supabase/client")).createClient();
+      const { data } = await db.from("hs_documents").select("id, filename, category, doc_type, storage_path").order("filename");
+      setHsDocs((data as HSDoc[]) ?? []);
+    }
+  }
+
+  async function handleHSAssign() {
+    if (!hsDocId) return;
+    const doc = hsDocs.find(d => d.id === hsDocId)!;
+    setHsAssigning(true);
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    await fetch(`${API_BASE}/hs/assignments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        doc_id: doc.id,
+        doc_title: doc.filename.replace(/\.(pdf|docx?|xlsx?)$/i, ""),
+        assigned_to: employee.name,
+        assigned_by: userName || "Crew Boss",
+        due_date: hsDueDate,
+        note: hsNote,
+      }),
+    });
+    setHsAssigning(false);
+    setHsAssignDone(true);
+  }
+
   return (
     <>
     <div className="p-7 max-w-6xl mx-auto">
@@ -241,11 +289,19 @@ export default function EmployeeProfile({ employee, employees, onBack, onUpdateE
             </div>
           </div>
           <div className="flex gap-2 shrink-0">
+            {!isCrewBoss && (
+              <button
+                onClick={openEdit}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-surface-secondary border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
+              >
+                ✎ Edit
+              </button>
+            )}
             <button
-              onClick={openEdit}
+              onClick={openHSModal}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-surface-secondary border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
             >
-              ✎ Edit
+              ◫ Assign H&S Doc
             </button>
             <button
               onClick={openSendModal}
@@ -904,6 +960,71 @@ export default function EmployeeProfile({ employee, employees, onBack, onUpdateE
                 {sending ? "Sending…" : "✍ Send Request"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* H&S Assign Modal */}
+      {showHSModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+              <div className="text-sm font-semibold text-text-primary">Assign H&S Document</div>
+              <button onClick={() => setShowHSModal(false)} className="text-text-tertiary hover:text-text-primary text-lg leading-none">×</button>
+            </div>
+            {hsAssignDone ? (
+              <div className="py-10 flex flex-col items-center gap-4 px-5">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center text-xl"
+                  style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>✓</div>
+                <div className="text-center">
+                  <div className="text-sm font-bold text-text-primary">Document Assigned</div>
+                  <div className="text-xs text-text-tertiary mt-1">Assigned to <span className="font-semibold text-text-secondary">{employee.name}</span></div>
+                </div>
+                <button onClick={() => setShowHSModal(false)}
+                  className="px-5 py-2 text-xs font-bold rounded-lg"
+                  style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+                  Done
+                </button>
+              </div>
+            ) : (
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest font-semibold text-text-tertiary mb-1">Assigning To</label>
+                  <div className="px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-secondary">{employee.name}</div>
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest font-semibold text-text-tertiary mb-1">H&S Document *</label>
+                  <select value={hsDocId} onChange={e => setHsDocId(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50">
+                    <option value="">Select a document…</option>
+                    {hsDocs.map(d => (
+                      <option key={d.id} value={d.id}>{d.filename.replace(/\.(pdf|docx?|xlsx?)$/i, "")} — {d.category}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest font-semibold text-text-tertiary mb-1">Due Date</label>
+                  <input type="date" value={hsDueDate} onChange={e => setHsDueDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] uppercase tracking-widest font-semibold text-text-tertiary mb-1">Note / Instructions</label>
+                  <textarea value={hsNote} onChange={e => setHsNote(e.target.value)} rows={3} placeholder="Any instructions…"
+                    className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50 resize-none" />
+                </div>
+                <div className="flex gap-2 justify-end pt-2 border-t border-border">
+                  <button onClick={() => setShowHSModal(false)}
+                    className="px-4 py-2 text-xs font-semibold rounded-lg border border-border bg-surface text-text-secondary hover:bg-surface-secondary transition-colors">
+                    Cancel
+                  </button>
+                  <button onClick={handleHSAssign} disabled={hsAssigning || !hsDocId}
+                    className="px-5 py-2 text-xs font-bold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+                    {hsAssigning ? "Assigning…" : "Assign Document"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -62,12 +62,16 @@ interface EmployeeTableProps {
   onAddEmployee: (emp: Employee) => void;
   onDeleteEmployee: (id: string) => void;
   onUpdateEmployee: (emp: Employee) => void;
+  userRole?: string;
+  userName?: string;
 }
 
 export default function EmployeeTable({
   employees, searchQuery, onSelectEmployee,
   onAddEmployee, onDeleteEmployee, onUpdateEmployee,
+  userRole = "admin", userName = "",
 }: EmployeeTableProps) {
+  const isCrewBoss = userRole === "crew_boss";
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [statusFilter, setStatusFilter] = useState<Employee["status"] | "all">("all");
@@ -237,6 +241,7 @@ export default function EmployeeTable({
 
   const filtered = employees
     .filter((e) => {
+      if (isCrewBoss && e.crewBoss?.trim().toLowerCase() !== userName.trim().toLowerCase()) return false;
       const q = searchQuery.toLowerCase();
       if (q && !e.name.toLowerCase().includes(q) && !e.role.toLowerCase().includes(q) && !e.email.toLowerCase().includes(q)) return false;
       if (statusFilter !== "all" && e.status !== statusFilter) return false;
@@ -288,18 +293,22 @@ export default function EmployeeTable({
           <option value="all">All departments</option>
           {departments.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
-        <button onClick={handleImport2026} disabled={importing}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary/40 transition-all disabled:opacity-50">
-          {importing ? "Importing…" : "↓ Import 2026 Roster"}
-        </button>
-        <button onClick={handleAssignCrews} disabled={assigning}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary/40 transition-all disabled:opacity-50">
-          {assigning ? "Assigning…" : "◉ Assign Crew Bosses"}
-        </button>
-        <button onClick={openAdd} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all hover:opacity-90"
-          style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
-          + Add Employee
-        </button>
+        {!isCrewBoss && (
+          <>
+            <button onClick={handleImport2026} disabled={importing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary/40 transition-all disabled:opacity-50">
+              {importing ? "Importing…" : "↓ Import 2026 Roster"}
+            </button>
+            <button onClick={handleAssignCrews} disabled={assigning}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-text-secondary hover:text-text-primary hover:border-primary/40 transition-all disabled:opacity-50">
+              {assigning ? "Assigning…" : "◉ Assign Crew Bosses"}
+            </button>
+            <button onClick={openAdd} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all hover:opacity-90"
+              style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+              + Add Employee
+            </button>
+          </>
+        )}
       </div>
 
       {/* Table */}
@@ -354,35 +363,41 @@ export default function EmployeeTable({
                       {badge.label}
                     </span>
                   </td>
-                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    {(() => {
-                      const crewBosses = employees.filter(e =>
-                        e.role.toLowerCase().includes("crew boss") || e.role.toLowerCase().includes("supervisor")
-                      );
-                      return (
-                        <select
-                          value={emp.crewBoss ?? ""}
-                          onChange={e => {
-                            e.stopPropagation();
-                            onUpdateEmployee({ ...emp, crewBoss: e.target.value });
-                          }}
-                          className="text-[11px] border border-border rounded-lg px-2 py-1 bg-surface-secondary text-text-secondary focus:outline-none focus:border-primary/50 max-w-[140px]"
-                        >
-                          <option value="">— unassigned —</option>
-                          {crewBosses.map(cb => (
-                            <option key={cb.id} value={cb.name}>{cb.name}</option>
-                          ))}
-                        </select>
-                      );
-                    })()}
-                  </td>
+                  {!isCrewBoss && (
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                      {(() => {
+                        const crewBosses = employees.filter(e =>
+                          e.role.toLowerCase().includes("crew boss") || e.role.toLowerCase().includes("supervisor")
+                        );
+                        return (
+                          <select
+                            value={emp.crewBoss ?? ""}
+                            onChange={e => {
+                              e.stopPropagation();
+                              onUpdateEmployee({ ...emp, crewBoss: e.target.value });
+                            }}
+                            className="text-[11px] border border-border rounded-lg px-2 py-1 bg-surface-secondary text-text-secondary focus:outline-none focus:border-primary/50 max-w-[140px]"
+                          >
+                            <option value="">— unassigned —</option>
+                            {crewBosses.map(cb => (
+                              <option key={cb.id} value={cb.name}>{cb.name}</option>
+                            ))}
+                          </select>
+                        );
+                      })()}
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => onSelectEmployee(emp)} className="text-[11px] text-primary hover:underline font-medium">View</button>
-                      <span className="text-border">|</span>
-                      <button onClick={(e) => openEdit(emp, e)} className="text-[11px] text-text-secondary hover:text-text-primary">Edit</button>
-                      <span className="text-border">|</span>
-                      <button onClick={(e) => handleDelete(emp.id, e)} className="text-[11px] text-danger hover:underline">Remove</button>
+                      {!isCrewBoss && (
+                        <>
+                          <span className="text-border">|</span>
+                          <button onClick={(e) => openEdit(emp, e)} className="text-[11px] text-text-secondary hover:text-text-primary">Edit</button>
+                          <span className="text-border">|</span>
+                          <button onClick={(e) => handleDelete(emp.id, e)} className="text-[11px] text-danger hover:underline">Remove</button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
