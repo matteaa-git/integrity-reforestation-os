@@ -94,8 +94,14 @@ function cleanTitle(filename: string) {
   return filename.replace(/\.(docx|xlsx|pdf)$/i, "");
 }
 
-function extColor(filename: string) {
-  const ext = filename.split(".").pop()?.toLowerCase();
+function getExt(filename: string, storagePath?: string): string {
+  const fromName = filename.split(".").pop()?.toLowerCase() ?? "";
+  if (fromName && fromName !== filename.toLowerCase()) return fromName;
+  return storagePath?.split(".").pop()?.toLowerCase() ?? "";
+}
+
+function extColor(filename: string, storagePath?: string) {
+  const ext = getExt(filename, storagePath);
   if (ext === "pdf") return { bg: "bg-red-50 text-red-600", label: "PDF" };
   if (ext === "xlsx") return { bg: "bg-green-50 text-green-600", label: "XLSX" };
   return { bg: "bg-blue-50 text-blue-600", label: "DOCX" };
@@ -726,7 +732,7 @@ function PreviewModal({ doc, previewUrl, onClose, onDownload }: {
   onClose: () => void;
   onDownload: () => void;
 }) {
-  const isPdf = doc.filename.toLowerCase().endsWith(".pdf");
+  const isPdf = getExt(doc.filename, doc.storage_path) === "pdf";
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-6">
@@ -847,8 +853,8 @@ function AssignModal({ doc, onClose, onAssigned }: {
         <div className="space-y-4">
           {/* Document being assigned */}
           <div className="p-3 bg-surface-secondary rounded-xl border border-border flex items-center gap-3">
-            <div className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded ${extColor(doc.filename).bg}`}>
-              {extColor(doc.filename).label}
+            <div className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded ${extColor(doc.filename, doc.storage_path).bg}`}>
+              {extColor(doc.filename, doc.storage_path).label}
             </div>
             <div>
               <div className="text-xs font-semibold text-text-primary">{cleanTitle(doc.filename)}</div>
@@ -1179,7 +1185,7 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               {filtered.map(doc => {
-                const ext = extColor(doc.filename);
+                const ext = extColor(doc.filename, doc.storage_path);
                 const canFill = doc.doc_type === "form" && DIGITAL_FORM_IDS.has(doc.id);
                 return (
                   <div key={`${doc.id}-${doc.category}`}
