@@ -202,7 +202,7 @@ export default function AdminPage() {
       case "accounting":
         return <AccountingCenter />;
       case "projects":
-        return <ProjectsCenter />;
+        return <ProjectsCenter userRole={userRole} />;
       case "cashflow":
         return <ProjectCashFlowCenter />;
       case "media":

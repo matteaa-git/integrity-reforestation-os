@@ -36,6 +36,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, AdminSection[]> = {
     "projects", "media", "operations", "production", "assets", "training-guides",
     "insurance", "receipts", "health-safety", "file-ingest",
   ],
-  crew_boss: ["production", "receipts", "health-safety", "documents"],
+  crew_boss: ["production", "receipts", "health-safety", "documents", "projects"],
   planter:   ["my-production", "my-earnings"],
 };

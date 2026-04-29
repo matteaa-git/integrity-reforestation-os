@@ -130,12 +130,13 @@ async function resolveProject(stored: StoredProject): Promise<Project> {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function ProjectsCenter() {
+export default function ProjectsCenter({ userRole = "admin" }: { userRole?: string }) {
+  const isAdmin = userRole === "admin" || userRole === "supervisor";
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<FileCategory | "all">("all");
+  const [categoryFilter, setCategoryFilter] = useState<FileCategory | "all">(isAdmin ? "all" : "map");
   const [viewMode, setViewMode] = useState<"grid" | "list" | "blocks">("grid");
   const [isDragging, setIsDragging] = useState(false);
 
@@ -625,27 +626,31 @@ export default function ProjectsCenter() {
       {/* ── Left: Project List ── */}
       <div className="w-60 bg-surface border-r border-border flex flex-col shrink-0">
         <div className="p-3 border-b border-border space-y-2">
-          <button
-            onClick={openNewProject}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
-          >
-            + New Project
-          </button>
+          {isAdmin && (
+            <>
+              <button
+                onClick={openNewProject}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+              >
+                + New Project
+              </button>
 
-          {/* Nagagami 2026 one-click import */}
-          <button
-            onClick={handleSeedNagagami}
-            disabled={nagaSeeding}
-            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-surface-secondary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {nagaSeeding ? (
-              nagaProgress
-                ? `${nagaProgress.done}/${nagaProgress.total} files…`
-                : "Importing…"
-            ) : (
-              "↓ Import Nagagami 2026"
-            )}
-          </button>
+              {/* Nagagami 2026 one-click import */}
+              <button
+                onClick={handleSeedNagagami}
+                disabled={nagaSeeding}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-surface-secondary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {nagaSeeding ? (
+                  nagaProgress
+                    ? `${nagaProgress.done}/${nagaProgress.total} files…`
+                    : "Importing…"
+                ) : (
+                  "↓ Import Nagagami 2026"
+                )}
+              </button>
+            </>
+          )}
 
           <input
             type="text"
@@ -661,9 +666,11 @@ export default function ProjectsCenter() {
             <div className="p-6 text-center">
               <div className="text-2xl opacity-15 mb-2">⬡</div>
               <div className="text-xs text-text-tertiary">No projects yet</div>
-              <button onClick={openNewProject} className="text-xs text-primary hover:underline mt-1">
-                Create one
-              </button>
+              {isAdmin && (
+                <button onClick={openNewProject} className="text-xs text-primary hover:underline mt-1">
+                  Create one
+                </button>
+              )}
             </div>
           ) : (
             filteredProjects.map((p) => {
@@ -672,7 +679,7 @@ export default function ProjectsCenter() {
               return (
                 <button
                   key={p.id}
-                  onClick={() => { setSelectedId(p.id); setCategoryFilter("all"); }}
+                  onClick={() => { setSelectedId(p.id); setCategoryFilter(isAdmin ? "all" : "map"); }}
                   className={`w-full text-left px-3 py-2.5 border-b border-border-light transition-colors ${
                     isSelected ? "bg-primary/8 border-l-2 border-l-primary" : "hover:bg-surface-secondary"
                   }`}
@@ -704,14 +711,16 @@ export default function ProjectsCenter() {
               <div className="text-4xl opacity-10 mb-4">⬡</div>
               <div className="text-sm font-semibold text-text-secondary">Select a project</div>
               <div className="text-xs text-text-tertiary mt-1 mb-4">
-                Or create a new one to get started
+                {isAdmin ? "Or create a new one to get started" : "Select a project to view its maps"}
               </div>
-              <button
-                onClick={openNewProject}
-                className="px-4 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
-              >
-                + New Project
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={openNewProject}
+                  className="px-4 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                >
+                  + New Project
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -733,26 +742,28 @@ export default function ProjectsCenter() {
                     <span>{selectedProject.files.length} file{selectedProject.files.length !== 1 ? "s" : ""}</span>
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={(e) => openEditProject(selectedProject, e)}
-                    className="px-3 py-1.5 text-xs font-medium bg-surface-secondary border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => setDeleteProjectId(selectedProject.id)}
-                    className="px-3 py-1.5 text-xs font-medium border border-border rounded-lg text-danger hover:bg-red-50 transition-colors"
-                  >
-                    Delete
-                  </button>
-                </div>
+                {isAdmin && (
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={(e) => openEditProject(selectedProject, e)}
+                      className="px-3 py-1.5 text-xs font-medium bg-surface-secondary border border-border rounded-lg text-text-secondary hover:text-text-primary transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => setDeleteProjectId(selectedProject.id)}
+                      className="px-3 py-1.5 text-xs font-medium border border-border rounded-lg text-danger hover:bg-red-50 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
             {/* Project-level tabs */}
             <div className="flex items-center border-b border-border bg-surface shrink-0 px-6">
-              {(["files", "nursery", "blocks"] as const).map(t => (
+              {(["files", "nursery", "blocks"] as const).filter(t => isAdmin || t === "files").map(t => (
                 <button key={t} onClick={() => setProjectTab(t)}
                   className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
                     projectTab === t ? "border-primary text-primary" : "border-transparent text-text-secondary hover:text-text-primary"
@@ -821,31 +832,35 @@ export default function ProjectsCenter() {
                   </button>
                 </div>
 
-                <select
-                  value={uploadCategory}
-                  onChange={(e) => setUploadCategory(e.target.value as FileCategory)}
-                  className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-secondary focus:outline-none focus:border-primary/50"
-                >
-                  {FILE_CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
-                  ))}
-                </select>
+                {isAdmin && (
+                  <>
+                    <select
+                      value={uploadCategory}
+                      onChange={(e) => setUploadCategory(e.target.value as FileCategory)}
+                      className="text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-secondary focus:outline-none focus:border-primary/50"
+                    >
+                      {FILE_CATEGORIES.map((c) => (
+                        <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
+                      ))}
+                    </select>
 
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg hover:opacity-90 transition-all"
-                  style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
-                >
-                  ↑ Upload
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.rtf,.zip,.rar,.dwg,.dxf,.kml,.kmz,.jpg,.jpeg,.png,.gif,.svg,.webp,.mp4,.mov,image/*"
-                  onChange={handleFileInputChange}
-                />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg hover:opacity-90 transition-all"
+                      style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                    >
+                      ↑ Upload
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.ppt,.pptx,.txt,.rtf,.zip,.rar,.dwg,.dxf,.kml,.kmz,.jpg,.jpeg,.png,.gif,.svg,.webp,.mp4,.mov,image/*"
+                      onChange={handleFileInputChange}
+                    />
+                  </>
+                )}
               </div>
             </div>}
 
@@ -1542,28 +1557,32 @@ export default function ProjectsCenter() {
                             >
                               ↓ Download
                             </button>
-                            <button
-                              onClick={() => setDeleteFileTarget({ projectId: selectedProject.id, fileId: file.id })}
-                              className="text-[10px] text-danger hover:underline"
-                            >
-                              Remove
-                            </button>
+                            {isAdmin && (
+                              <button
+                                onClick={() => setDeleteFileTarget({ projectId: selectedProject.id, fileId: file.id })}
+                                className="text-[10px] text-danger hover:underline"
+                              >
+                                Remove
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
                     );
                   })}
 
-                  {/* Upload tile */}
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className="border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-2 min-h-[160px] hover:border-primary/40 hover:bg-primary/3 transition-all cursor-pointer group"
-                  >
-                    <span className="text-2xl opacity-15 group-hover:opacity-30 transition-opacity">+</span>
-                    <span className="text-[11px] font-medium text-text-tertiary group-hover:text-primary transition-colors">
-                      Add Files
-                    </span>
-                  </div>
+                  {/* Upload tile — admin only */}
+                  {isAdmin && (
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-border rounded-xl flex flex-col items-center justify-center gap-2 min-h-[160px] hover:border-primary/40 hover:bg-primary/3 transition-all cursor-pointer group"
+                    >
+                      <span className="text-2xl opacity-15 group-hover:opacity-30 transition-opacity">+</span>
+                      <span className="text-[11px] font-medium text-text-tertiary group-hover:text-primary transition-colors">
+                        Add Files
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-surface rounded-xl border border-border shadow-sm overflow-hidden">
@@ -1604,8 +1623,12 @@ export default function ProjectsCenter() {
                             <td className="px-4 py-3 text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <button onClick={() => handleDownload(file)} className="text-[11px] text-primary hover:underline font-medium">↓ Download</button>
-                                <span className="text-border">|</span>
-                                <button onClick={() => setDeleteFileTarget({ projectId: selectedProject.id, fileId: file.id })} className="text-[11px] text-danger hover:underline">Remove</button>
+                                {isAdmin && (
+                                  <>
+                                    <span className="text-border">|</span>
+                                    <button onClick={() => setDeleteFileTarget({ projectId: selectedProject.id, fileId: file.id })} className="text-[11px] text-danger hover:underline">Remove</button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
