@@ -916,6 +916,7 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
   const [fillDoc, setFillDoc] = useState<HSDoc | null>(null);
   const [previewDoc, setPreviewDoc] = useState<HSDoc | null>(null);
   const [previewSignedUrl, setPreviewSignedUrl] = useState<string>("");
+  const [viewLoading, setViewLoading] = useState(false);
   const [assignDoc, setAssignDoc] = useState<HSDoc | null>(null);
   const [viewSub, setViewSub] = useState<Submission | null>(null);
 
@@ -940,7 +941,7 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
           filename:     String(row.filename),
           category:     String(row.category),
           doc_type:     (row.doc_type as "policy" | "form") ?? "policy",
-          exists:       Boolean(row.has_file),
+          exists:       Boolean(row.has_file) || Boolean(row.storage_path),
           storage_path: row.storage_path ? String(row.storage_path) : undefined,
         })));
       }
@@ -986,8 +987,17 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
     const res = await fetch(`/api/admin/document-url?path=${encodeURIComponent(doc.storage_path)}`);
     if (!res.ok) return;
     const { url } = await res.json();
-    const a = document.createElement("a");
-    a.href = url; a.download = doc.filename; a.click();
+    // Fetch as blob to work around cross-origin a.download restriction
+    try {
+      const blob = await fetch(url).then(r => r.blob());
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl; a.download = doc.filename; a.click();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    } catch {
+      // Fallback: open in new tab
+      window.open(url, "_blank");
+    }
   };
 
   const handleUpload = async () => {
@@ -1217,15 +1227,23 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
                     <div className="flex gap-1.5 mt-auto">
                       <button
                         onClick={async () => {
-                          if (!doc.storage_path) return;
-                          const res = await fetch(`/api/admin/document-url?path=${encodeURIComponent(doc.storage_path)}`);
-                          if (res.ok) { const { url } = await res.json(); setPreviewSignedUrl(url); }
-                          setPreviewDoc(doc);
+                          if (!doc.storage_path || viewLoading) return;
+                          setViewLoading(true);
+                          try {
+                            const res = await fetch(`/api/admin/document-url?path=${encodeURIComponent(doc.storage_path)}`);
+                            if (res.ok) {
+                              const { url } = await res.json();
+                              setPreviewSignedUrl(url);
+                              setPreviewDoc(doc);
+                            }
+                          } finally {
+                            setViewLoading(false);
+                          }
                         }}
-                        disabled={!doc.exists}
+                        disabled={!doc.exists || viewLoading}
                         className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg border border-border bg-surface text-text-secondary hover:bg-surface-secondary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
-                        ◫ View
+                        {viewLoading ? "…" : "◫ View"}
                       </button>
                       <button
                         onClick={() => handleDownload(doc)}
