@@ -218,7 +218,7 @@ export default function AdminPage() {
       case "insurance":
         return <InsuranceCenter />;
       case "receipts":
-        return <ReceiptsCenter />;
+        return <ReceiptsCenter userRole={userRole} userName={userName} />;
       case "users":
         return <UserManagement />;
       case "my-production":

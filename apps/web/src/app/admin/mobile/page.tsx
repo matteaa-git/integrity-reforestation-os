@@ -33,6 +33,7 @@ export default function MobileAdminPage() {
   const router = useRouter();
   const supabase = createClient();
   const [userRole, setUserRole] = useState<UserRole>("crew_boss");
+  const [userName, setUserName] = useState("");
   const [authLoading, setAuthLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<AdminSection>("production");
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
@@ -46,6 +47,8 @@ export default function MobileAdminPage() {
       const { data: roleData } = await supabase.rpc("get_my_role");
       const role = (roleData as UserRole) ?? "crew_boss";
       setUserRole(role);
+      const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", user.id).single();
+      setUserName((profile?.full_name as string | null) ?? user.email ?? "");
       const allowed = ROLE_PERMISSIONS[role];
       if (!allowed.includes(activeSection)) setActiveSection(allowed[0]);
       setAuthLoading(false);
@@ -137,7 +140,7 @@ export default function MobileAdminPage() {
       case "assets":           return <AssetsCenter />;
       case "training-guides":  return <TrainingGuidesCenter />;
       case "insurance":        return <InsuranceCenter />;
-      case "receipts":         return <ReceiptsCenter />;
+      case "receipts":         return <ReceiptsCenter userRole={userRole} userName={userName} />;
       case "cashflow":         return <ProjectCashFlowCenter />;
       case "health-safety":    return <HSProgramCenter />;
       default:                 return null;

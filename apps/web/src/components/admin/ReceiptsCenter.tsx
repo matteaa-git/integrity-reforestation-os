@@ -2,12 +2,9 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
-  getReceipts, saveReceipt, deleteReceipt,
   saveReceiptImage, getReceiptImage,
   type Receipt,
 } from "@/lib/adminDb";
-import { RECEIPT_SEED } from "./receiptSeedData";
-
 // ── Constants ───────────────────────────────────────────────────────────────
 
 const EXPENSE_TYPES = ["Gas - Regular", "Gas - Supreme", "Diesel", "Groceries", "Supplies", "FCRP", "Other"];
@@ -62,7 +59,31 @@ type SortDir = "asc" | "desc";
 
 // ── Component ───────────────────────────────────────────────────────────────
 
-export default function ReceiptsCenter() {
+// Map Supabase snake_case row → Receipt (camelCase)
+function rowToReceipt(row: Record<string, unknown>): Receipt {
+  return {
+    id:              String(row.id ?? ""),
+    employee:        String(row.employee ?? ""),
+    cost:            row.cost != null ? Number(row.cost) : null,
+    date:            String(row.date ?? ""),
+    time:            String(row.time ?? ""),
+    expenseType:     String(row.expense_type ?? ""),
+    litres:          row.litres != null ? Number(row.litres) : null,
+    pricePerLitre:   row.price_per_litre != null ? Number(row.price_per_litre) : null,
+    total:           row.total != null ? Number(row.total) : null,
+    vehicle:         String(row.vehicle ?? ""),
+    items:           String(row.items ?? ""),
+    creditCard:      String(row.credit_card ?? ""),
+    odometer:        String(row.odometer ?? ""),
+    location:        String(row.location ?? ""),
+    notes:           String(row.notes ?? ""),
+    receiptProvided: String(row.receipt_provided ?? "Yes"),
+    imageUrl:        String(row.image_url ?? ""),
+  };
+}
+
+export default function ReceiptsCenter({ userRole = "admin", userName = "" }: { userRole?: string; userName?: string }) {
+  const isAdmin = userRole === "admin" || userRole === "supervisor";
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loading, setLoading]   = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -91,17 +112,14 @@ export default function ReceiptsCenter() {
   // ── Load + seed ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    getReceipts().then(existing => {
-      if (existing.length === 0) {
-        const seeded = (RECEIPT_SEED as unknown as Omit<Receipt, never>[]).map(r => ({ ...r })) as Receipt[];
-        Promise.all(seeded.map(r => saveReceipt(r))).then(() => {
-          setReceipts(seeded.sort((a, b) => b.date.localeCompare(a.date)));
-        });
-      } else {
-        setReceipts(existing.sort((a, b) => b.date.localeCompare(a.date)));
-      }
-      setLoading(false);
-    });
+    fetch("/api/admin/receipts")
+      .then(res => res.json())
+      .then((rows: Record<string, unknown>[]) => {
+        const mapped = rows.map(rowToReceipt).sort((a, b) => b.date.localeCompare(a.date));
+        setReceipts(mapped);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
   // ── Derived data ─────────────────────────────────────────────────────────
@@ -244,7 +262,7 @@ export default function ReceiptsCenter() {
 
   function openAdd() {
     setEditingId(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, employee: isAdmin ? "" : userName });
     setImagePreview(null);
     setPendingBlob(null);
     setExtractMsg(null);
@@ -265,23 +283,34 @@ export default function ReceiptsCenter() {
     if (!form.employee || !form.date) return;
     setSaving(true);
     const id = editingId ?? uid();
-    const rec: Receipt = { ...form, id, cost: form.cost ?? null };
-    if (pendingBlob) {
-      await saveReceiptImage(id, pendingBlob);
+    if (pendingBlob) await saveReceiptImage(id, pendingBlob);
+
+    const method = editingId ? "PUT" : "POST";
+    const res = await fetch("/api/admin/receipts", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, id, submitted_by_name: userName }),
+    });
+    if (res.ok) {
+      const row = await res.json();
+      const rec = rowToReceipt(row);
+      setReceipts(prev =>
+        editingId
+          ? prev.map(r => r.id === rec.id ? rec : r)
+          : [rec, ...prev]
+      );
+      setShowModal(false);
     }
-    await saveReceipt(rec);
-    setReceipts(prev =>
-      editingId
-        ? prev.map(r => r.id === id ? rec : r)
-        : [rec, ...prev]
-    );
     setSaving(false);
-    setShowModal(false);
   }
 
   async function handleDelete(id: string) {
-    await deleteReceipt(id);
-    setReceipts(prev => prev.filter(r => r.id !== id));
+    const res = await fetch("/api/admin/receipts", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (res.ok) setReceipts(prev => prev.filter(r => r.id !== id));
   }
 
   function setField(field: keyof Omit<Receipt, "id">, value: string | number | null) {
@@ -343,10 +372,12 @@ export default function ReceiptsCenter() {
             value={search} onChange={e => setSearch(e.target.value)}
             className="px-3 py-1.5 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary/50 w-56"
           />
-          <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="px-2.5 py-1.5 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50">
-            <option value="all">All Employees</option>
-            {EMPLOYEES.map(e => <option key={e} value={e}>{e}</option>)}
-          </select>
+          {isAdmin && (
+            <select value={filterEmployee} onChange={e => setFilterEmployee(e.target.value)} className="px-2.5 py-1.5 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50">
+              <option value="all">All Employees</option>
+              {EMPLOYEES.map(e => <option key={e} value={e}>{e}</option>)}
+            </select>
+          )}
           <select value={filterType} onChange={e => setFilterType(e.target.value)} className="px-2.5 py-1.5 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50">
             <option value="all">All Types</option>
             {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -524,10 +555,14 @@ export default function ReceiptsCenter() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <div>
                   <label className={labelCls}>Employee *</label>
-                  <select value={form.employee} onChange={e => setField("employee", e.target.value)} className={inputCls}>
-                    <option value="">Select…</option>
-                    {EMPLOYEES.map(e => <option key={e} value={e}>{e}</option>)}
-                  </select>
+                  {isAdmin ? (
+                    <select value={form.employee} onChange={e => setField("employee", e.target.value)} className={inputCls}>
+                      <option value="">Select…</option>
+                      {EMPLOYEES.map(e => <option key={e} value={e}>{e}</option>)}
+                    </select>
+                  ) : (
+                    <input value={form.employee} readOnly className={inputCls + " opacity-60 cursor-not-allowed"} />
+                  )}
                 </div>
                 <div>
                   <label className={labelCls}>Date *</label>
