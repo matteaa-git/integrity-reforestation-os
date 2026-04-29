@@ -443,34 +443,42 @@ export default function DocumentCenter({ employees, userRole = "admin" }: Docume
                   <td className="px-4 py-3 text-text-secondary">{doc.employee}</td>
                   <td className="px-4 py-3 text-text-secondary">{doc.date_added}</td>
                   <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                    <select value={doc.status}
-                      onChange={e => handleStatusChange(doc, e.target.value as DocStatus)}
-                      className="text-[10px] font-semibold px-2 py-0.5 rounded-full border-0 cursor-pointer focus:outline-none"
-                      style={sb.style}>
-                      <option value="draft">Draft</option>
-                      <option value="pending">Pending</option>
-                      <option value="signed">Signed</option>
-                      <option value="expired">Expired</option>
-                    </select>
+                    {isCrewBoss ? (
+                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={sb.style}>
+                        {doc.status}
+                      </span>
+                    ) : (
+                      <select value={doc.status}
+                        onChange={e => handleStatusChange(doc, e.target.value as DocStatus)}
+                        className="text-[10px] font-semibold px-2 py-0.5 rounded-full border-0 cursor-pointer focus:outline-none"
+                        style={sb.style}>
+                        <option value="draft">Draft</option>
+                        <option value="pending">Pending</option>
+                        <option value="signed">Signed</option>
+                        <option value="expired">Expired</option>
+                      </select>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <div className="flex items-center justify-end gap-2">
                       {doc.has_file && (
                         <>
-                          <button onClick={() => handleView(doc)} className="text-[11px] hover:underline" style={{ color: "var(--color-primary)" }}>View</button>
+                          <button onClick={() => handleView(doc)} className="text-[11px] font-semibold hover:underline" style={{ color: "var(--color-primary)" }}>View</button>
                           <span className="text-border">|</span>
-                          <button onClick={() => handleDownload(doc)} className="text-[11px] text-text-secondary hover:text-text-primary" title="Download">↓</button>
-                          <span className="text-border">|</span>
+                          <button onClick={() => handleDownload(doc)} className="text-[11px] text-text-secondary hover:text-text-primary" title="Download">↓ Download</button>
                         </>
                       )}
-                      <button onClick={() => openSend(doc)}
-                        className="text-[11px] font-semibold hover:underline" style={{ color: "var(--color-info)" }}>
-                        Send
-                      </button>
-                      {!isCrewBoss && <><span className="text-border">|</span>
-                      <button onClick={() => openEdit(doc)} className="text-[11px] text-text-secondary hover:text-text-primary">Edit</button>
-                      <span className="text-border">|</span>
-                      <button onClick={() => setDeleteTarget(doc)} className="text-[11px] text-text-tertiary hover:text-danger">Delete</button></>}
+                      {!isCrewBoss && <>
+                        {doc.has_file && <span className="text-border">|</span>}
+                        <button onClick={() => openSend(doc)}
+                          className="text-[11px] font-semibold hover:underline" style={{ color: "var(--color-info)" }}>
+                          Send
+                        </button>
+                        <span className="text-border">|</span>
+                        <button onClick={() => openEdit(doc)} className="text-[11px] text-text-secondary hover:text-text-primary">Edit</button>
+                        <span className="text-border">|</span>
+                        <button onClick={() => setDeleteTarget(doc)} className="text-[11px] text-text-tertiary hover:text-danger">Delete</button>
+                      </>}
                     </div>
                   </td>
                 </tr>
