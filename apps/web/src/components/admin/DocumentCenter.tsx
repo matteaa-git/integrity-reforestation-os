@@ -213,10 +213,10 @@ export default function DocumentCenter({ employees, userRole = "admin" }: Docume
 
   async function getSignedUrl(doc: Doc): Promise<string | null> {
     if (!doc.has_file || !doc.storage_path) return null;
-    const { data } = await supabase.storage
-      .from("documents")
-      .createSignedUrl(doc.storage_path, 3600);
-    return data?.signedUrl ?? null;
+    const res = await fetch(`/api/admin/document-url?path=${encodeURIComponent(doc.storage_path)}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.url ?? null;
   }
 
   async function handleView(doc: Doc) {
