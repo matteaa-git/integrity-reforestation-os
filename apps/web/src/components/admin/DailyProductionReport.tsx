@@ -145,9 +145,10 @@ interface SavedSession {
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-interface Props { employees: Employee[]; userRole?: string }
+interface Props { employees: Employee[]; userRole?: string; userName?: string }
 
-export default function DailyProductionReport({ employees, userRole = "admin" }: Props) {
+export default function DailyProductionReport({ employees, userRole = "admin", userName = "" }: Props) {
+  const isCrewBoss = userRole === "crew_boss";
   const supabase = createClient();
   const [tab, setTab] = useState<Tab>("entry");
   const [rates, setRates]     = useState<SpeciesRate[]>([]);
@@ -155,7 +156,7 @@ export default function DailyProductionReport({ employees, userRole = "admin" }:
   const [toast, setToast]     = useState<string | null>(null);
 
   // Entry tab
-  const [session, setSession]   = useState<SessionForm>(EMPTY_SESSION);
+  const [session, setSession]   = useState<SessionForm>({ ...EMPTY_SESSION, crewBoss: isCrewBoss ? userName : "" });
   const [planters, setPlanters] = useState<DraftPlanter[]>([newDraftPlanter()]);
   const [saving, setSaving]     = useState(false);
 
@@ -340,6 +341,14 @@ export default function DailyProductionReport({ employees, userRole = "admin" }:
   });
 
   // ── Load from IndexedDB ────────────────────────────────────────────────
+
+  // When crew boss userName resolves, lock the session crewBoss and trigger planter auto-populate
+  useEffect(() => {
+    if (isCrewBoss && userName) {
+      handleCrewBossChange(userName);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userName]);
 
   useEffect(() => {
     getAllRecords<SpeciesRate>("species_rates").then(saved => {
@@ -1164,12 +1173,13 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
   }, [entries]);
 
   const filtered = useMemo(() => entries.filter(e => {
+    if (isCrewBoss && e.crewBoss !== userName) return false;
     if (e.date < dateFrom || e.date > dateTo) return false;
     if (crewFilter    !== "all" && e.crewBoss !== crewFilter) return false;
     if (projectFilter !== "all" && e.project  !== projectFilter) return false;
     if (planterFilter !== "all" && e.employeeId !== planterFilter && e.employeeName !== planterFilter) return false;
     return true;
-  }), [entries, dateFrom, dateTo, crewFilter, projectFilter, planterFilter]);
+  }), [entries, dateFrom, dateTo, crewFilter, projectFilter, planterFilter, isCrewBoss, userName]);
 
   // ── Summary aggregations ──────────────────────────────────────────────
 
@@ -1560,10 +1570,14 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                 </div>
                 <div>
                   <label className={labelCls}>Crew Boss *</label>
-                  <select value={session.crewBoss} onChange={e => handleCrewBossChange(e.target.value)} className={inputCls}>
-                    <option value="">Select crew boss…</option>
-                    {crewBossOptions.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
-                  </select>
+                  {isCrewBoss ? (
+                    <div className={`${inputCls} text-text-secondary bg-surface-secondary cursor-not-allowed`}>{userName || "—"}</div>
+                  ) : (
+                    <select value={session.crewBoss} onChange={e => handleCrewBossChange(e.target.value)} className={inputCls}>
+                      <option value="">Select crew boss…</option>
+                      {crewBossOptions.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label className={labelCls}>Project</label>

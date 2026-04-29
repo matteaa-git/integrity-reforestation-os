@@ -210,7 +210,7 @@ export default function AdminPage() {
       case "operations":
         return <OperationsCenter employees={employees} />;
       case "production":
-        return <DailyProductionReport employees={employees} userRole={userRole} />;
+        return <DailyProductionReport employees={employees} userRole={userRole} userName={userName} />;
       case "assets":
         return <AssetsCenter />;
       case "training-guides":
