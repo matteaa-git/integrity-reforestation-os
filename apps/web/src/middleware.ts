@@ -54,6 +54,28 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Restrict crew_boss and planter to /admin only
+  if (user) {
+    try {
+      const adminSupabase = createServerClient(supabaseUrl, supabaseKey, {
+        cookies: {
+          getAll() { return request.cookies.getAll(); },
+          setAll() {},
+        },
+      });
+      const { data: roleData } = await adminSupabase.rpc("get_my_role");
+      const role = roleData as string;
+      const isAdminRoute = pathname.startsWith("/admin") || isPublic;
+      if ((role === "crew_boss" || role === "planter") && !isAdminRoute) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/admin";
+        return NextResponse.redirect(url);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return supabaseResponse;
 }
 
