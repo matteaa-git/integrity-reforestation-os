@@ -757,11 +757,12 @@ function PreviewModal({ doc, previewUrl, onClose, onDownload }: {
 
         {/* Body */}
         <div className="flex-1 min-h-0 overflow-hidden rounded-b-2xl">
-          {isPdf ? (
+          {isPdf && previewUrl ? (
             <iframe
               src={previewUrl}
               className="w-full h-full border-0"
               title={doc.filename}
+              onError={() => window.open(previewUrl, "_blank")}
             />
           ) : (
             <div className="h-full flex flex-col items-center justify-center gap-5 p-8 bg-surface-secondary">
@@ -987,7 +988,14 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
     if (!uploadName.trim()) return;
     setUploading(true);
     let storagePath: string | null = null;
+
+    // Build filename — always include the file extension
+    let filename = uploadName.trim();
     if (uploadFile) {
+      const ext = uploadFile.name.split(".").pop()?.toLowerCase() ?? "";
+      if (ext && !filename.toLowerCase().endsWith(`.${ext}`)) {
+        filename = `${filename}.${ext}`;
+      }
       const fd = new FormData();
       fd.append("file", uploadFile);
       const res = await fetch("/api/admin/upload-document", { method: "POST", body: fd });
@@ -996,7 +1004,7 @@ export default function HSProgramCenter({ userRole = "admin" }: { userRole?: str
       storagePath = json.path;
     }
     const { data, error } = await supabase.from("hs_documents").insert({
-      filename:     uploadName.trim(),
+      filename,
       category:     uploadCategory,
       doc_type:     uploadDocType,
       has_file:     !!storagePath,
