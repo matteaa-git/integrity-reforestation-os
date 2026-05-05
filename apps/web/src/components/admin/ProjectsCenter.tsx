@@ -1260,9 +1260,11 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                           </thead>
                           <tbody>
                             {savedTargets.map(t => {
-                              const isEditing = !!editingTargets[t.id];
-                              const draft     = editingTargets[t.id];
-                              const remaining = t.prescription > 0 ? t.prescription - (t.treesDelivered ?? 0) : null;
+                              const isEditing   = !!editingTargets[t.id];
+                              const draft       = editingTargets[t.id];
+                              const remaining   = t.prescription > 0 ? t.prescription - (t.treesDelivered ?? 0) : null;
+                              const blockRecord = blocks.find(b => b.blockName === t.block);
+                              const allocations = blockRecord?.allocations ?? [];
                               return (
                                 <tr key={t.id} className="group border-b border-border last:border-0 hover:bg-surface-secondary/20 transition-colors">
                                   {isEditing ? (
@@ -1323,7 +1325,22 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                                   ) : (
                                     <>
                                       <td className="px-4 py-2.5 font-semibold text-text-primary">{t.block}</td>
-                                      <td className="px-4 py-2.5 text-right text-text-secondary">{t.prescription > 0 ? t.prescription.toLocaleString() : <span className="text-text-tertiary">—</span>}</td>
+                                      <td className="px-4 py-2.5 text-right">
+                                        <div className="flex flex-col items-end gap-1">
+                                          <span className="font-semibold text-text-secondary">
+                                            {t.prescription > 0 ? t.prescription.toLocaleString() : <span className="text-text-tertiary">—</span>}
+                                          </span>
+                                          {allocations.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 justify-end">
+                                              {allocations.map(a => (
+                                                <span key={a.id} className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-surface-secondary border border-border text-text-secondary">
+                                                  <span className="font-mono font-semibold text-text-primary">{a.species}</span> {a.trees.toLocaleString()}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
                                       <td className="px-4 py-2.5 text-right text-text-secondary">{(t.treesDelivered ?? 0) > 0 ? (t.treesDelivered ?? 0).toLocaleString() : <span className="text-text-tertiary">—</span>}</td>
                                       <td className={`px-4 py-2.5 text-right font-semibold ${remaining === null ? "text-text-tertiary" : remaining > 0 ? "text-text-primary" : "text-red-400"}`}>
                                         {remaining === null ? "—" : remaining > 0 ? remaining.toLocaleString() : `+${Math.abs(remaining).toLocaleString()} over`}
