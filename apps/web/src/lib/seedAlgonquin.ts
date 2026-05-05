@@ -15,6 +15,10 @@ import {
   saveFileBlob,
   saveProjectBlock,
   saveBlockTarget,
+  getProjectBlocks,
+  deleteProjectBlock,
+  getAllBlockTargets,
+  deleteBlockTarget,
   type StoredProject,
   type StoredFileMeta,
   type ProjectBlock,
@@ -145,71 +149,80 @@ export interface SeedProgress {
 export async function seedAlgonquinProject(
   onProgress?: (p: SeedProgress) => void
 ): Promise<"seeded" | "already_exists"> {
-  const existing = await getAllProjects();
-  if (existing.some((p) => p.id === PROJECT_ID)) return "already_exists";
+  const existing     = await getAllProjects();
+  const projectExists = existing.some((p) => p.id === PROJECT_ID);
 
-  const now   = new Date().toISOString();
-  const total = OVERVIEW_FILES.length + BLOCKS.filter(b => b.mapFile).length;
-  let done    = 0;
+  const now = new Date().toISOString();
 
-  function progress(label: string) {
-    done++;
-    onProgress?.({ total, done, current: label });
+  if (!projectExists) {
+    // ── Full seed: download files + create project ──────────────────────────
+    const total = OVERVIEW_FILES.length + BLOCKS.filter(b => b.mapFile).length;
+    let done    = 0;
+
+    function progress(label: string) {
+      done++;
+      onProgress?.({ total, done, current: label });
+    }
+
+    const fileMetas: StoredFileMeta[] = [];
+
+    for (const def of OVERVIEW_FILES) {
+      const url  = `${BASE_URL}/${encodeURIComponent(def.filename)}`;
+      const blob = await fetchBlob(url);
+      const id   = uid("alg-f");
+      await saveFileBlob(id, PROJECT_ID, blob);
+      fileMetas.push({ id, name: def.displayName, category: "map", size: formatBytes(blob.size), uploadedAt: now });
+      progress(def.displayName);
+    }
+
+    const mapFileIds = new Map<string, string>();
+    for (const blk of BLOCKS) {
+      if (!blk.mapFile) continue;
+      const url  = `${BASE_URL}/${encodeURIComponent(blk.mapFile)}`;
+      const blob = await fetchBlob(url);
+      const id   = uid("alg-m");
+      await saveFileBlob(id, PROJECT_ID, blob);
+      fileMetas.push({ id, name: blk.name, category: "map", size: formatBytes(blob.size), uploadedAt: now });
+      mapFileIds.set(blk.mapFile, id);
+      progress(blk.name);
+    }
+
+    const project: StoredProject = {
+      id:        PROJECT_ID,
+      name:      PROJECT_NAME,
+      location:  "Algonquin Provincial Park, Ontario",
+      season:    "2026",
+      status:    "active",
+      createdAt: now,
+      files:     fileMetas,
+    };
+    await saveProject(project);
   }
 
-  const fileMetas: StoredFileMeta[] = [];
+  // ── Always refresh ProjectBlock records (allocations may have been missing) ─
 
-  // 1. Overview / operational maps
-  for (const def of OVERVIEW_FILES) {
-    const url  = `${BASE_URL}/${encodeURIComponent(def.filename)}`;
-    const blob = await fetchBlob(url);
-    const id   = uid("alg-f");
-    await saveFileBlob(id, PROJECT_ID, blob);
-    fileMetas.push({ id, name: def.displayName, category: "map", size: formatBytes(blob.size), uploadedAt: now });
-    progress(def.displayName);
-  }
+  const existingBlocks = await getProjectBlocks(PROJECT_ID);
+  for (const b of existingBlocks) await deleteProjectBlock(b.id);
 
-  // 2. Block map files
-  const mapFileIds = new Map<string, string>();
   for (const blk of BLOCKS) {
-    if (!blk.mapFile) continue;
-    const url  = `${BASE_URL}/${encodeURIComponent(blk.mapFile)}`;
-    const blob = await fetchBlob(url);
-    const id   = uid("alg-m");
-    await saveFileBlob(id, PROJECT_ID, blob);
-    fileMetas.push({ id, name: blk.name, category: "map", size: formatBytes(blob.size), uploadedAt: now });
-    mapFileIds.set(blk.mapFile, id);
-    progress(blk.name);
-  }
-
-  // 3. Save project
-  const project: StoredProject = {
-    id:        PROJECT_ID,
-    name:      PROJECT_NAME,
-    location:  "Algonquin Provincial Park, Ontario",
-    season:    "2026",
-    status:    "active",
-    createdAt: now,
-    files:     fileMetas,
-  };
-  await saveProject(project);
-
-  // 4. ProjectBlock records with species allocations
-  for (const blk of BLOCKS) {
-    const mapFileId = blk.mapFile ? mapFileIds.get(blk.mapFile) : undefined;
     const block: ProjectBlock = {
       id:          uid("alg-b"),
       projectId:   PROJECT_ID,
       blockName:   blk.name,
       area:        blk.area,
       density:     blk.density,
-      mapFileId,
       allocations: blk.species.map(s => ({ id: uid("alg-a"), species: s.code, trees: s.trees })),
     };
     await saveProjectBlock(block);
   }
 
-  // 5. BlockTarget records (prescription totals)
+  // ── Always refresh BlockTarget records ─────────────────────────────────────
+
+  const existingTargets = await getAllBlockTargets();
+  for (const t of existingTargets.filter(t => t.project === PROJECT_NAME)) {
+    await deleteBlockTarget(t.id);
+  }
+
   for (const blk of BLOCKS) {
     const prescriptionTotal = blk.species.reduce((s, sp) => s + sp.trees, 0);
     if (prescriptionTotal === 0) continue;
@@ -223,5 +236,5 @@ export async function seedAlgonquinProject(
     await saveBlockTarget(target);
   }
 
-  return "seeded";
+  return projectExists ? "already_exists" : "seeded";
 }

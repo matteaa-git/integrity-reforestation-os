@@ -230,13 +230,14 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
     setAlgProgress({ total: 0, done: 0, current: "Starting…" });
     try {
       const result = await seedAlgonquinProject((p) => setAlgProgress(p));
+      // Always reload so updated blocks/prescriptions are reflected
+      const stored = await getAllProjects();
+      const resolved = await Promise.all(stored.map(resolveProject));
+      setProjects(resolved);
+      setSelectedId("algonquin-2026");
       if (result === "already_exists") {
-        showToast("Algonquin 2026 already imported", "success");
+        showToast("Algonquin 2026 blocks & prescriptions refreshed");
       } else {
-        const stored = await getAllProjects();
-        const resolved = await Promise.all(stored.map(resolveProject));
-        setProjects(resolved);
-        setSelectedId("algonquin-2026");
         showToast("Algonquin Park 2026 imported — 13 map files");
       }
     } catch (err) {
