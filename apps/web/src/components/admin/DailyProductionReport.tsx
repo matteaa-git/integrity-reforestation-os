@@ -224,8 +224,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [supLines, setSupLines]     = useState<{ id: string; speciesId: string; trees: string }[]>(
     [{ id: uid(), speciesId: "", trees: "" }]
   );
-  const [supSaving, setSupSaving]   = useState(false);
+  const [supSaving, setSupSaving]       = useState(false);
   const [supBlockFilter, setSupBlockFilter] = useState("all");
+  const [editDeliveryId, setEditDeliveryId] = useState<string | null>(null);
 
   // Planter report modal
   const [reportPlanterKey, setReportPlanterKey] = useState<string | null>(null);
@@ -2302,6 +2303,24 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
             ? deliveries
             : deliveries.filter(d => d.block === supBlockFilter);
 
+          function handleEditDelivery(d: SupervisorDelivery) {
+            setEditDeliveryId(d.id);
+            setSupDate(d.date);
+            setSupBlock(d.block);
+            setSupProject(d.project ?? "");
+            setSupLoadNum(d.loadNumber ?? "");
+            setSupBy(d.deliveredBy ?? "");
+            setSupNotes(d.notes ?? "");
+            setSupLines(d.lines.map(l => ({ id: l.id, speciesId: l.speciesId, trees: String(l.trees) })));
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }
+
+          function handleCancelEdit() {
+            setEditDeliveryId(null);
+            setSupLines([{ id: uid(), speciesId: "", trees: "" }]);
+            setSupLoadNum(""); setSupBy(""); setSupNotes(""); setSupBlock("");
+          }
+
           async function handleSaveDelivery() {
             if (!supDate || !supBlock) return;
             setSupSaving(true);
@@ -2313,7 +2332,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
               });
             if (lines.length === 0) { setSupSaving(false); return; }
             const delivery: SupervisorDelivery = {
-              id: `sd-sup-${uid()}`,
+              id: editDeliveryId ?? `sd-sup-${uid()}`,
               date: supDate, project: supProject, block: supBlock,
               loadNumber: supLoadNum || undefined,
               deliveredBy: supBy || undefined,
@@ -2322,11 +2341,17 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
               totalTrees: lines.reduce((s, l) => s + l.trees, 0),
             };
             await saveSupervisorDelivery(delivery);
-            setDeliveries(prev => [delivery, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+            if (editDeliveryId) {
+              setDeliveries(prev => prev.map(x => x.id === editDeliveryId ? delivery : x));
+              setEditDeliveryId(null);
+              showToast("Delivery updated");
+            } else {
+              setDeliveries(prev => [delivery, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+              showToast("Delivery recorded");
+            }
             setSupLines([{ id: uid(), speciesId: "", trees: "" }]);
             setSupLoadNum(""); setSupBy(""); setSupNotes(""); setSupBlock("");
             setSupSaving(false);
-            showToast("Delivery recorded");
           }
 
           return (
@@ -2334,7 +2359,16 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
               {/* ── Entry form ── */}
               <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Record Tree Delivery</div>
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">
+                    {editDeliveryId ? "Edit Delivery" : "Record Tree Delivery"}
+                  </div>
+                  {editDeliveryId && (
+                    <button onClick={handleCancelEdit} className="text-[11px] text-text-tertiary hover:text-text-primary transition-colors">
+                      ✕ Cancel Edit
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className={labelCls}>Date *</label>
@@ -2418,7 +2452,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                     disabled={!supDate || !supBlock || supSaving}
                     className="px-6 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
-                    {supSaving ? "Saving…" : "Record Delivery"}
+                    {supSaving ? "Saving…" : editDeliveryId ? "Update Delivery" : "Record Delivery"}
                   </button>
                 </div>
               </div>
@@ -2668,8 +2702,14 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                           </div>
                           {d.notes && <div className="text-[10px] text-text-tertiary italic">{d.notes}</div>}
                         </div>
-                        <button onClick={async () => { await deleteSupervisorDelivery(d.id); setDeliveries(prev => prev.filter(x => x.id !== d.id)); }}
-                          className="text-text-tertiary hover:text-red-400 text-sm font-bold shrink-0 ml-4 transition-colors">×</button>
+                        <div className="flex items-center gap-2 shrink-0 ml-4">
+                          <button
+                            onClick={() => handleEditDelivery(d)}
+                            className="text-[11px] text-text-tertiary hover:text-primary transition-colors font-medium"
+                          >✎ Edit</button>
+                          <button onClick={async () => { await deleteSupervisorDelivery(d.id); setDeliveries(prev => prev.filter(x => x.id !== d.id)); }}
+                            className="text-text-tertiary hover:text-red-400 text-sm font-bold transition-colors">×</button>
+                        </div>
                       </div>
                     ))}
                   </div>
