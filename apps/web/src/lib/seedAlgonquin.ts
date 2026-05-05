@@ -89,11 +89,16 @@ const BLOCKS: BlockDef[] = [
   },
   {
     name: "Teal Lake", area: 125.2, density: 1242,
-    mapFile: "Teal Lake.pdf",
+    mapFile: "Teal Lake Final TP Map.pdf",
     species: [
       { code: "Pw", trees: 94250 },
       { code: "Pr", trees: 61286 },
     ],
+  },
+  {
+    name: "Km 78 South", area: 0,
+    mapFile: "km 78 South.pdf",
+    species: [],
   },
   {
     name: "Brent", area: 0,
