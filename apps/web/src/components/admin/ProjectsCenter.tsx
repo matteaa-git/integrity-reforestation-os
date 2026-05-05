@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import FilePreviewModal from "@/components/admin/FilePreviewModal";
 import { seedNagagamiProject, type SeedProgress } from "@/lib/seedNagagami";
+import { seedAlgonquinProject } from "@/lib/seedAlgonquin";
 import {
   getAllProjects,
   saveProject,
@@ -166,6 +167,10 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
   const [nagaSeeding, setNagaSeeding] = useState(false);
   const [nagaProgress, setNagaProgress] = useState<SeedProgress | null>(null);
 
+  // Algonquin 2026 seed
+  const [algSeeding, setAlgSeeding]     = useState(false);
+  const [algProgress, setAlgProgress]   = useState<SeedProgress | null>(null);
+
   // Project-level tab
   const [projectTab, setProjectTab] = useState<"files" | "nursery" | "blocks">("files");
 
@@ -218,6 +223,28 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
   function showToast(msg: string, type: "success" | "error" = "success") {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 2500);
+  }
+
+  async function handleSeedAlgonquin() {
+    setAlgSeeding(true);
+    setAlgProgress({ total: 0, done: 0, current: "Starting…" });
+    try {
+      const result = await seedAlgonquinProject((p) => setAlgProgress(p));
+      if (result === "already_exists") {
+        showToast("Algonquin 2026 already imported", "success");
+      } else {
+        const stored = await getAllProjects();
+        const resolved = await Promise.all(stored.map(resolveProject));
+        setProjects(resolved);
+        setSelectedId("algonquin-2026");
+        showToast("Algonquin Park 2026 imported — 13 map files");
+      }
+    } catch (err) {
+      showToast(`Import failed: ${(err as Error).message}`, "error");
+    } finally {
+      setAlgSeeding(false);
+      setAlgProgress(null);
+    }
   }
 
   async function handleSeedNagagami() {
@@ -647,6 +674,20 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                     : "Importing…"
                 ) : (
                   "↓ Import Nagagami 2026"
+                )}
+              </button>
+
+              <button
+                onClick={handleSeedAlgonquin}
+                disabled={algSeeding}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-border hover:bg-surface-secondary transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {algSeeding ? (
+                  algProgress
+                    ? `${algProgress.done}/${algProgress.total} files…`
+                    : "Importing…"
+                ) : (
+                  "↓ Import Algonquin 2026"
                 )}
               </button>
             </>
