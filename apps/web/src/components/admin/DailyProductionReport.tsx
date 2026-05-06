@@ -1558,7 +1558,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     <div className="flex flex-col h-full">
 
       {/* Tab bar */}
-      <div className="flex items-center border-b border-border px-6 bg-surface shrink-0">
+      <div className="flex items-center border-b border-border px-6 bg-surface shrink-0 overflow-x-auto no-scrollbar">
         {(["entry", "supervisor", "daily", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
           .filter(t => userRole === "crew_boss" ? t === "entry" : true)
           .map(t => (
