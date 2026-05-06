@@ -8,7 +8,7 @@
  */
 
 const DB_NAME = "integrity-admin";
-const DB_VERSION = 18;
+const DB_VERSION = 21;
 
 export type ProjectStatus = "active" | "tendering" | "completed" | "archived";
 
@@ -164,6 +164,31 @@ function openDb(): Promise<IDBDatabase> {
       // v18 stores
       if (!db.objectStoreNames.contains("block_targets")) {
         db.createObjectStore("block_targets", { keyPath: "id" });
+      }
+      // v19: (superseded — no-op)
+      // v20: (superseded — no-op)
+      // v21: remove any duplicate emp-seed-030+ records and insert the 8 employees
+      //      who were missing from the original 55-person import
+      if ((e as IDBVersionChangeEvent).oldVersion < 21 && db.objectStoreNames.contains("employees")) {
+        const empStore = (e.target as IDBOpenDBRequest).transaction!.objectStore("employees");
+        // Clean up any emp-seed-030 to emp-seed-063 that earlier versions may have written
+        for (let i = 30; i <= 63; i++) {
+          empStore.delete(`emp-seed-${String(i).padStart(3, "0")}`);
+        }
+        // Insert the 8 employees not covered by the original import
+        const v20Employees = [
+          { id: "s26-056", name: "Brendan Donald McKenzie", role: "Tree Planter", department: "Field Operations", email: "brendanmckenzie95@gmail.com", phone: "2896962991", status: "active", startDate: "2026-05-01", avatar: "BM", city: "St. Catharines", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "529876583", dlClass: "", firstAid: "No", emergencyContactName: "Tafean Williston", emergencyContactPhone: "2896962991", emergencyContactEmail: "", bankName: "Tangerine", bankInstitutionNumber: "614", bankTransitNumber: "00152", bankAccountNumber: "4016978907", streetAddress: "111 Fourth Ave #12" },
+          { id: "s26-057", name: "Benjamin Richard Leigh Ruben Mitchell", role: "Tree Planter", department: "Field Operations", email: "footballben02@gmail.com", phone: "3439989232", status: "active", startDate: "2026-05-01", avatar: "BM", city: "Carleton Place", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "566602470", dlClass: "G2", firstAid: "No", emergencyContactName: "Melissa Mitchell", emergencyContactPhone: "6132579232", emergencyContactEmail: "missym_8@hotmail.com", bankName: "Royal Bank of Canada", bankInstitutionNumber: "003", bankTransitNumber: "00842", bankAccountNumber: "5098215", streetAddress: "124 William Street" },
+          { id: "s26-058", name: "James Stephen Samhaber", role: "Tree Planter", department: "Field Operations", email: "james.samhaber@gmail.com", phone: "6137255987", status: "active", startDate: "2026-05-01", avatar: "JS", city: "Ottawa", province: "ON", crewBoss: "Adam Deruyte", sin: "533074936", dlClass: "G", firstAid: "No", emergencyContactName: "Bruce Samhaber", emergencyContactPhone: "6132976961", emergencyContactEmail: "Bruce.samhaber@gmail.com", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "20396", bankAccountNumber: "0279927", streetAddress: "112 Kenora Street" },
+          { id: "s26-059", name: "Matthew Byrne Colas", role: "Tree Planter", department: "Field Operations", email: "matthewcolas777@gmail.com", phone: "6479695268", status: "active", startDate: "2026-05-01", avatar: "MC", city: "Mississauga", province: "ON", crewBoss: "Richard Jackson Gattesco", sin: "551437353", dlClass: "G", firstAid: "No", emergencyContactName: "Rosemary Colas", emergencyContactPhone: "4169045268", emergencyContactEmail: "roseandalexcolas@gmail.com", bankName: "Wealthsimple", bankInstitutionNumber: "703", bankTransitNumber: "00001", bankAccountNumber: "31260821", streetAddress: "448 Aqua Drive" },
+          { id: "s26-060", name: "Mouhamadoul Moustapha Ndoye", role: "Tree Planter", department: "Field Operations", email: "moustaphandoye737@gmail.com", phone: "2638812093", status: "active", startDate: "2026-05-01", avatar: "MN", city: "Gatineau", province: "QC", crewBoss: "Richard Jackson Gattesco", sin: "969205913", dlClass: "", firstAid: "No", emergencyContactName: "Abdoul Aziz Lam", emergencyContactPhone: "3435532104", emergencyContactEmail: "Axiloc2003@gmail.com", bankName: "Desjardins", bankInstitutionNumber: "829", bankTransitNumber: "00107", bankAccountNumber: "0619213", streetAddress: "A-18 Rue Demontigny" },
+          { id: "s26-061", name: "Noah Doell", role: "Tree Planter", department: "Field Operations", email: "noahdoell041@gmail.com", phone: "6132502743", status: "active", startDate: "2026-05-01", avatar: "ND", city: "Peterborough", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "599315157", dlClass: "G", firstAid: "No", emergencyContactName: "Carley Doell", emergencyContactPhone: "6138594881", emergencyContactEmail: "cdoell44@gmail.com", bankName: "RBC", bankInstitutionNumber: "003", bankTransitNumber: "01672", bankAccountNumber: "5185707", streetAddress: "28A Springbrook Drive" },
+          { id: "s26-062", name: "Real Bain", role: "Tree Planter", department: "Field Operations", email: "rayraybain001@gmail.com", phone: "6477248941", status: "active", startDate: "2026-05-01", avatar: "RB", city: "Toronto", province: "ON", crewBoss: "Richard Jackson Gattesco", sin: "552450926", dlClass: "", firstAid: "No", emergencyContactName: "Nancy Patel", emergencyContactPhone: "6476808784", emergencyContactEmail: "Onsitehealth@rogers.com", bankName: "RBC", bankInstitutionNumber: "003", bankTransitNumber: "06352", bankAccountNumber: "5094370", streetAddress: "225 Gladstone Avenue" },
+          { id: "s26-063", name: "Sebastian Candela", role: "Tree Planter", department: "Field Operations", email: "sebicand@gmail.com", phone: "6138934636", status: "active", startDate: "2026-05-01", avatar: "SC", city: "Kingston", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "569796881", dlClass: "G", firstAid: "No", emergencyContactName: "Rudy Candela", emergencyContactPhone: "6135442658", emergencyContactEmail: "candelar@limestone.on.ca", bankName: "TD Bank", bankInstitutionNumber: "004", bankTransitNumber: "01392", bankAccountNumber: "6710220", streetAddress: "46 Mowat Ave" },
+        ];
+        for (const emp of v20Employees) {
+          empStore.put(emp);
+        }
       }
     };
 
@@ -555,8 +580,21 @@ const SEED_EMPLOYEES = [
   { id: "emp-seed-025", name: "Jolissa Lonsberry", role: "Crew Boss", department: "Field Operations", email: "jolissa.lonsberry@gmail.com", phone: "(613) 847-5622", status: "active", startDate: "2026-05-01", avatar: "", streetAddress: "104 Gracefield Lane", city: "Belleville", province: "Ontario", crewBoss: "", firstAid: "Yes", dlClass: "C", sin: "539 553 776", workPermit: "", emergencyContactName: "Joe Lonsberry", emergencyContactPhone: "(613) 962-2841", emergencyContactEmail: "", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "55046", bankAccountNumber: "0067628" },
   { id: "emp-seed-026", name: "Nathaniel Brouwer", role: "Tree Planter", department: "Field Operations", email: "brounath772@gmail.com", phone: "(226) 224-8025", status: "active", startDate: "2026-05-01", avatar: "", streetAddress: "99 Bruce street", city: "London", province: "ON", crewBoss: "Jackson Gattesco", firstAid: "No", dlClass: "G", sin: "545 672 776", workPermit: "", emergencyContactName: "Richard Brouwer", emergencyContactPhone: "(519) 521-8343", emergencyContactEmail: "rbrouwer1970@icloud.com", bankName: "TD Bank", bankInstitutionNumber: "004", bankTransitNumber: "00122", bankAccountNumber: "6446541" },
   { id: "emp-seed-027", name: "Stephanie McGee", role: "Tree Planter", department: "Field Operations", email: "stephaniemcgee160@gmail.com", phone: "(905) 429-9713", status: "active", startDate: "2026-05-01", avatar: "", streetAddress: "1 Walbridge court", city: "Bowmanville", province: "Ontario", crewBoss: "Jackson Gattesco", firstAid: "No", dlClass: "G", sin: "568 104 038", workPermit: "", emergencyContactName: "Sarah Robillard", emergencyContactPhone: "(905) 623-6786", emergencyContactEmail: "Stephaniemcgee160@gmail.com", bankName: "Scotia Bank", bankInstitutionNumber: "002", bankTransitNumber: "37572", bankAccountNumber: "0189286" },
-  { id: "emp-seed-028", name: "Christoph Neuland", role: "Tree Planter", department: "Field Operations", email: "neulandchristoph@gmail.com", phone: "(226) 237-1545", status: "active", startDate: "2026-05-01", avatar: "", streetAddress: "308 Nairn Avenue", city: "Toronto", province: "Ontario", crewBoss: "Ocean Windsong", firstAid: "No", dlClass: "", sin: "566 193 157", workPermit: "", emergencyContactName: "Janis Neuland", emergencyContactPhone: "(647) 381-0539", emergencyContactEmail: "", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "64816", bankAccountNumber: "0067415" },
+  { id: "emp-seed-028", name: "Christoph Neuland", role: "Tree Planter", department: "Field Operations", email: "neulandchristoph@gmail.com", phone: "(226) 237-1545", status: "active", startDate: "2026-05-01", avatar: "", streetAddress: "308 Nairn Avenue", city: "Toronto", province: "Ontario", crewBoss: "Richard Jackson Gattesco", firstAid: "No", dlClass: "", sin: "566 193 157", workPermit: "", emergencyContactName: "Janis Neuland", emergencyContactPhone: "(647) 381-0539", emergencyContactEmail: "", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "64816", bankAccountNumber: "0067415" },
   { id: "emp-seed-029", name: "Brittney Taylor Shanks", role: "Tree Planter", department: "Field Operations", email: "brittneyshanks432@gmail.com", phone: "(519) 731-4090", status: "active", startDate: "2026-05-01", avatar: "", streetAddress: "159 Corbett Drive, Unit 1", city: "Pontypool", province: "Ontario", crewBoss: "Adam Deryute", firstAid: "No", dlClass: "G", sin: "527 893 861", workPermit: "", emergencyContactName: "Darlene Shanks", emergencyContactPhone: "(905) 626-9315", emergencyContactEmail: "Shanksyoutoo@aol.com", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "14936", bankAccountNumber: "0200425" },
+];
+
+// Employees that must exist in the DB — checked by email to survive any caching scenario.
+// These are the 8 employees added after the initial 55-person roster was imported.
+const REQUIRED_EMPLOYEES = [
+  { id: "s26-056", name: "Brendan Donald McKenzie", role: "Tree Planter", department: "Field Operations", email: "brendanmckenzie95@gmail.com", phone: "2896962991", status: "active", startDate: "2026-05-01", avatar: "BM", city: "St. Catharines", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "529876583", dlClass: "", firstAid: "No", emergencyContactName: "Tafean Williston", emergencyContactPhone: "2896962991", emergencyContactEmail: "", bankName: "Tangerine", bankInstitutionNumber: "614", bankTransitNumber: "00152", bankAccountNumber: "4016978907", streetAddress: "111 Fourth Ave #12" },
+  { id: "s26-057", name: "Benjamin Richard Leigh Ruben Mitchell", role: "Tree Planter", department: "Field Operations", email: "footballben02@gmail.com", phone: "3439989232", status: "active", startDate: "2026-05-01", avatar: "BM", city: "Carleton Place", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "566602470", dlClass: "G2", firstAid: "No", emergencyContactName: "Melissa Mitchell", emergencyContactPhone: "6132579232", emergencyContactEmail: "missym_8@hotmail.com", bankName: "Royal Bank of Canada", bankInstitutionNumber: "003", bankTransitNumber: "00842", bankAccountNumber: "5098215", streetAddress: "124 William Street" },
+  { id: "s26-058", name: "James Stephen Samhaber", role: "Tree Planter", department: "Field Operations", email: "james.samhaber@gmail.com", phone: "6137255987", status: "active", startDate: "2026-05-01", avatar: "JS", city: "Ottawa", province: "ON", crewBoss: "Adam Deruyte", sin: "533074936", dlClass: "G", firstAid: "No", emergencyContactName: "Bruce Samhaber", emergencyContactPhone: "6132976961", emergencyContactEmail: "Bruce.samhaber@gmail.com", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "20396", bankAccountNumber: "0279927", streetAddress: "112 Kenora Street" },
+  { id: "s26-059", name: "Matthew Byrne Colas", role: "Tree Planter", department: "Field Operations", email: "matthewcolas777@gmail.com", phone: "6479695268", status: "active", startDate: "2026-05-01", avatar: "MC", city: "Mississauga", province: "ON", crewBoss: "Richard Jackson Gattesco", sin: "551437353", dlClass: "G", firstAid: "No", emergencyContactName: "Rosemary Colas", emergencyContactPhone: "4169045268", emergencyContactEmail: "roseandalexcolas@gmail.com", bankName: "Wealthsimple", bankInstitutionNumber: "703", bankTransitNumber: "00001", bankAccountNumber: "31260821", streetAddress: "448 Aqua Drive" },
+  { id: "s26-060", name: "Mouhamadoul Moustapha Ndoye", role: "Tree Planter", department: "Field Operations", email: "moustaphandoye737@gmail.com", phone: "2638812093", status: "active", startDate: "2026-05-01", avatar: "MN", city: "Gatineau", province: "QC", crewBoss: "Richard Jackson Gattesco", sin: "969205913", dlClass: "", firstAid: "No", emergencyContactName: "Abdoul Aziz Lam", emergencyContactPhone: "3435532104", emergencyContactEmail: "Axiloc2003@gmail.com", bankName: "Desjardins", bankInstitutionNumber: "829", bankTransitNumber: "00107", bankAccountNumber: "0619213", streetAddress: "A-18 Rue Demontigny" },
+  { id: "s26-061", name: "Noah Doell", role: "Tree Planter", department: "Field Operations", email: "noahdoell041@gmail.com", phone: "6132502743", status: "active", startDate: "2026-05-01", avatar: "ND", city: "Peterborough", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "599315157", dlClass: "G", firstAid: "No", emergencyContactName: "Carley Doell", emergencyContactPhone: "6138594881", emergencyContactEmail: "cdoell44@gmail.com", bankName: "RBC", bankInstitutionNumber: "003", bankTransitNumber: "01672", bankAccountNumber: "5185707", streetAddress: "28A Springbrook Drive" },
+  { id: "s26-062", name: "Real Bain", role: "Tree Planter", department: "Field Operations", email: "rayraybain001@gmail.com", phone: "6477248941", status: "active", startDate: "2026-05-01", avatar: "RB", city: "Toronto", province: "ON", crewBoss: "Richard Jackson Gattesco", sin: "552450926", dlClass: "", firstAid: "No", emergencyContactName: "Nancy Patel", emergencyContactPhone: "6476808784", emergencyContactEmail: "Onsitehealth@rogers.com", bankName: "RBC", bankInstitutionNumber: "003", bankTransitNumber: "06352", bankAccountNumber: "5094370", streetAddress: "225 Gladstone Avenue" },
+  { id: "s26-063", name: "Sebastian Candela", role: "Tree Planter", department: "Field Operations", email: "sebicand@gmail.com", phone: "6138934636", status: "active", startDate: "2026-05-01", avatar: "SC", city: "Kingston", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "569796881", dlClass: "G", firstAid: "No", emergencyContactName: "Rudy Candela", emergencyContactPhone: "6135442658", emergencyContactEmail: "candelar@limestone.on.ca", bankName: "TD Bank", bankInstitutionNumber: "004", bankTransitNumber: "01392", bankAccountNumber: "6710220", streetAddress: "46 Mowat Ave" },
 ];
 
 /** Seeds 2026 employee roster on first load if not already present. */
@@ -564,13 +602,19 @@ export async function seedEmployeesData(): Promise<void> {
   const db = await openDb();
   const existing = await getAll<{ id: string }>(tx(db, "employees").objectStore("employees"));
   db.close();
+
   const existingIds = new Set(existing.map((e) => e.id));
-  const missing = SEED_EMPLOYEES.filter((e) => !existingIds.has(e.id));
-  if (missing.length === 0) return;
-  const db2 = await openDb();
-  const store = tx(db2, "employees", "readwrite").objectStore("employees");
-  await Promise.all(missing.map((e) => put(store, e)));
-  db2.close();
+
+  // Seed base 29 employees by ID
+  for (const emp of SEED_EMPLOYEES) {
+    if (!existingIds.has(emp.id)) await saveRecord("employees", emp);
+  }
+
+  // Always force-write the 8 required employees — put() is idempotent,
+  // this guarantees they exist regardless of any previous DB state.
+  for (const emp of REQUIRED_EMPLOYEES) {
+    await saveRecord("employees", emp);
+  }
 }
 
 /** Load all employees from IndexedDB. */

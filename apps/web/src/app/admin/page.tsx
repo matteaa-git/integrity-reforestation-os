@@ -123,11 +123,10 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    seedEmployeesData().then(() =>
-      getAllEmployees().then((all) =>
-        setEmployees((all as Employee[]).sort((a, b) => a.name.localeCompare(b.name)))
-      )
-    );
+    seedEmployeesData()
+      .then(() => getAllEmployees())
+      .then((all) => setEmployees((all as Employee[]).sort((a, b) => a.name.localeCompare(b.name))))
+      .catch((err) => console.error("[Admin] seedEmployeesData failed:", err));
   }, []);
 
   function handleSelectEmployee(emp: Employee) {

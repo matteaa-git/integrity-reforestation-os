@@ -148,17 +148,42 @@ export default function EmployeeTable({
   async function handleImport2026() {
     setImporting(true);
     const existingEmails = new Set(employees.map(e => e.email.toLowerCase()));
+    const existingIds    = new Set(employees.map(e => e.id));
     let added = 0;
+
+    // Full roster import (deduped by email)
     for (const emp of EMPLOYEES_2026) {
       if (!existingEmails.has(emp.email.toLowerCase())) {
         await saveRecord("employees", emp);
         onAddEmployee(emp);
         existingEmails.add(emp.email.toLowerCase());
+        existingIds.add(emp.id);
         added++;
       }
     }
+
+    // Hard-coded patch for the 8 employees that were added after the original import.
+    // Uses ID check so it works even if email dedup above missed them.
+    const patch: import("@/app/admin/page").Employee[] = [
+      { id: "s26-056", name: "Brendan Donald McKenzie", role: "Tree Planter", department: "Field Operations", email: "brendanmckenzie95@gmail.com", phone: "2896962991", status: "active", startDate: "2026-05-01", avatar: "BM", city: "St. Catharines", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "529876583", dlClass: "", firstAid: "No", emergencyContactName: "Tafean Williston", emergencyContactPhone: "2896962991", emergencyContactEmail: "", bankName: "Tangerine", bankInstitutionNumber: "614", bankTransitNumber: "00152", bankAccountNumber: "4016978907", streetAddress: "111 Fourth Ave #12" },
+      { id: "s26-057", name: "Benjamin Richard Leigh Ruben Mitchell", role: "Tree Planter", department: "Field Operations", email: "footballben02@gmail.com", phone: "3439989232", status: "active", startDate: "2026-05-01", avatar: "BM", city: "Carleton Place", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "566602470", dlClass: "G2", firstAid: "No", emergencyContactName: "Melissa Mitchell", emergencyContactPhone: "6132579232", emergencyContactEmail: "missym_8@hotmail.com", bankName: "Royal Bank of Canada", bankInstitutionNumber: "003", bankTransitNumber: "00842", bankAccountNumber: "5098215", streetAddress: "124 William Street" },
+      { id: "s26-058", name: "James Stephen Samhaber", role: "Tree Planter", department: "Field Operations", email: "james.samhaber@gmail.com", phone: "6137255987", status: "active", startDate: "2026-05-01", avatar: "JS", city: "Ottawa", province: "ON", crewBoss: "Adam Deruyte", sin: "533074936", dlClass: "G", firstAid: "No", emergencyContactName: "Bruce Samhaber", emergencyContactPhone: "6132976961", emergencyContactEmail: "Bruce.samhaber@gmail.com", bankName: "Scotiabank", bankInstitutionNumber: "002", bankTransitNumber: "20396", bankAccountNumber: "0279927", streetAddress: "112 Kenora Street" },
+      { id: "s26-059", name: "Matthew Byrne Colas", role: "Tree Planter", department: "Field Operations", email: "matthewcolas777@gmail.com", phone: "6479695268", status: "active", startDate: "2026-05-01", avatar: "MC", city: "Mississauga", province: "ON", crewBoss: "Richard Jackson Gattesco", sin: "551437353", dlClass: "G", firstAid: "No", emergencyContactName: "Rosemary Colas", emergencyContactPhone: "4169045268", emergencyContactEmail: "roseandalexcolas@gmail.com", bankName: "Wealthsimple", bankInstitutionNumber: "703", bankTransitNumber: "00001", bankAccountNumber: "31260821", streetAddress: "448 Aqua Drive" },
+      { id: "s26-060", name: "Mouhamadoul Moustapha Ndoye", role: "Tree Planter", department: "Field Operations", email: "moustaphandoye737@gmail.com", phone: "2638812093", status: "active", startDate: "2026-05-01", avatar: "MN", city: "Gatineau", province: "QC", crewBoss: "Richard Jackson Gattesco", sin: "969205913", dlClass: "", firstAid: "No", emergencyContactName: "Abdoul Aziz Lam", emergencyContactPhone: "3435532104", emergencyContactEmail: "Axiloc2003@gmail.com", bankName: "Desjardins", bankInstitutionNumber: "829", bankTransitNumber: "00107", bankAccountNumber: "0619213", streetAddress: "A-18 Rue Demontigny" },
+      { id: "s26-061", name: "Noah Doell", role: "Tree Planter", department: "Field Operations", email: "noahdoell041@gmail.com", phone: "6132502743", status: "active", startDate: "2026-05-01", avatar: "ND", city: "Peterborough", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "599315157", dlClass: "G", firstAid: "No", emergencyContactName: "Carley Doell", emergencyContactPhone: "6138594881", emergencyContactEmail: "cdoell44@gmail.com", bankName: "RBC", bankInstitutionNumber: "003", bankTransitNumber: "01672", bankAccountNumber: "5185707", streetAddress: "28A Springbrook Drive" },
+      { id: "s26-062", name: "Real Bain", role: "Tree Planter", department: "Field Operations", email: "rayraybain001@gmail.com", phone: "6477248941", status: "active", startDate: "2026-05-01", avatar: "RB", city: "Toronto", province: "ON", crewBoss: "Richard Jackson Gattesco", sin: "552450926", dlClass: "", firstAid: "No", emergencyContactName: "Nancy Patel", emergencyContactPhone: "6476808784", emergencyContactEmail: "Onsitehealth@rogers.com", bankName: "RBC", bankInstitutionNumber: "003", bankTransitNumber: "06352", bankAccountNumber: "5094370", streetAddress: "225 Gladstone Avenue" },
+      { id: "s26-063", name: "Sebastian Candela", role: "Tree Planter", department: "Field Operations", email: "sebicand@gmail.com", phone: "6138934636", status: "active", startDate: "2026-05-01", avatar: "SC", city: "Kingston", province: "ON", crewBoss: "Jolissa Lonsberry", sin: "569796881", dlClass: "G", firstAid: "No", emergencyContactName: "Rudy Candela", emergencyContactPhone: "6135442658", emergencyContactEmail: "candelar@limestone.on.ca", bankName: "TD Bank", bankInstitutionNumber: "004", bankTransitNumber: "01392", bankAccountNumber: "6710220", streetAddress: "46 Mowat Ave" },
+    ];
+    for (const emp of patch) {
+      if (!existingIds.has(emp.id)) {
+        await saveRecord("employees", emp);
+        onAddEmployee(emp);
+        added++;
+      }
+    }
+
     setImporting(false);
-    showToast(added > 0 ? `Imported ${added} employee${added !== 1 ? "s" : ""} from 2026 onboarding forms` : "All employees already in the system");
+    showToast(added > 0 ? `Imported ${added} employee${added !== 1 ? "s" : ""} from 2026 onboarding forms` : `All employees already in the system (prop count: ${employees.length}, ids checked: ${existingIds.size})`);
   }
 
   async function handleAssignCrews() {
@@ -178,6 +203,10 @@ export default function EmployeeTable({
       "cheelijahjames@gmail.com": "Jolissa Lonsberry",
       "keona8@rocketmail.com": "Jolissa Lonsberry",
       "brandyw0399@gmail.com": "Jolissa Lonsberry",
+      "brendanmckenzie95@gmail.com": "Jolissa Lonsberry",
+      "footballben02@gmail.com": "Jolissa Lonsberry",
+      "noahdoell041@gmail.com": "Jolissa Lonsberry",
+      "sebicand@gmail.com": "Jolissa Lonsberry",
       // Richard Jackson Gattesco
       "malcolmcowley005@gmail.com": "Richard Jackson Gattesco",
       "fanshiko@gmail.com": "Richard Jackson Gattesco",
@@ -190,6 +219,10 @@ export default function EmployeeTable({
       "chloemenard24@gmail.com": "Richard Jackson Gattesco",
       "forrestcurrie.fc@gmail.com": "Richard Jackson Gattesco",
       "cheansley5@gmail.com": "Richard Jackson Gattesco",
+      "matthewcolas777@gmail.com": "Richard Jackson Gattesco",
+      "moustaphandoye737@gmail.com": "Richard Jackson Gattesco",
+      "rayraybain001@gmail.com": "Richard Jackson Gattesco",
+      "neulandchristoph@gmail.com": "Richard Jackson Gattesco",
       // Lucas James Watson
       "aidan.mcdonald21@gmail.com": "Lucas James Watson",
       "ginger.anne.72@gmail.com": "Lucas James Watson",
@@ -216,6 +249,7 @@ export default function EmployeeTable({
       "djorbobakhit@gmail.com": "Adam Deruyte",
       "ethanwildrobin@gmail.com": "Adam Deruyte",
       "speicherjoey@gmail.com": "Adam Deruyte",
+      "james.samhaber@gmail.com": "Adam Deruyte",
     };
 
     let updated = 0;

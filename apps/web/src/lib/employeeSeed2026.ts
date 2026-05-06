@@ -85,7 +85,7 @@ export const EMPLOYEES_2026: Employee[] = [
   emp("s26-025","Jolissa Lonsberry","Crew Boss","Field Operations","jolissa.lonsberry@gmail.com","6138475622","Belleville","ON","","539553776","C","Yes","Joe Lonsberry","6139622841","","Scotiabank","002","55046","0067628","104 Gracefield Lane"),
   emp("s26-026","Nathaniel Brouwer","Tree Planter","Field Operations","brounath772@gmail.com","2262248025","London","ON","Richard Jackson Gattesco","545672776","G","No","Richard Brouwer","5195218343","rbrouwer1970@icloud.com","TD Bank","004","00122","6446541","99 Bruce Street"),
   emp("s26-027","Stephanie McGee","Tree Planter","Field Operations","stephaniemcgee160@gmail.com","9054299713","Bowmanville","ON","Richard Jackson Gattesco","568104038","G","No","Sarah Robillard","9056236786","","Scotiabank","002","37572","0189286","1 Walbridge Court"),
-  emp("s26-028","Christoph Neuland","Tree Planter","Field Operations","neulandchristoph@gmail.com","2262371545","Toronto","ON","Ocean Windsong","566193157","","No","Janis Neuland","6473810539","","Scotiabank","002","64816","0067415","308 Nairn Avenue"),
+  emp("s26-028","Christoph Neuland","Tree Planter","Field Operations","neulandchristoph@gmail.com","2262371545","Toronto","ON","Richard Jackson Gattesco","566193157","","No","Janis Neuland","6473810539","","Scotiabank","002","64816","0067415","308 Nairn Avenue"),
   emp("s26-029","Brittney Taylor Shanks","Tree Planter","Field Operations","brittneyshanks432@gmail.com","5197314090","Pontypool","ON","Adam Deruyte","527893861","G","No","Darlene Shanks","9056269315","Shanksyoutoo@aol.com","Scotiabank","002","14936","0200425","159 Corbett Drive Unit 1"),
   emp("s26-030","Michael Grivich","Tree Planter","Field Operations","michaelgrivich6@gmail.com","2899927475","Oshawa","ON","Lucas James Watson","536886997","","No","Rosemarie Grivich","9054337584","rgrivich@gmail.com","Simplii Financial","010","30800","0100165703","99/155 Glovers Rd"),
   emp("s26-031","Hayden Hudson-Cox","Tree Planter","Field Operations","haydenhudsoncox@gmail.com","6473327077","Toronto","ON","Lucas James Watson","550669733","G2","Yes","Heather","4168463125","heather@heatherhudson.ca","TD","004","03922","6501119","174 Willow Ave"),
@@ -113,6 +113,14 @@ export const EMPLOYEES_2026: Employee[] = [
   emp("s26-053","Joey Speicher","Tree Planter","Field Operations","speicherjoey@gmail.com","2262201775","Cambridge","ON","Adam Deruyte","579161118","G","No","Ted Speicher","2263389029","","TD Bank","004","00712","6328646","633 Parkview Crescent"),
   emp("s26-054","Ansley Che A","Tree Planter","Field Operations","cheansley5@gmail.com","5195885563","Kitchener","ON","Richard Jackson Gattesco","595056433","G","No","Simon Peter Chibicom A","2266064799","chibicompeter@gmail.com","WEALTHSIMPLE","703","00001","10646651","1511-600 Greenfield Ave"),
   emp("s26-055","Matthew Ronald Bell","Tree Planter","Field Operations","mattbellmrb@gmail.com","6139295676","Kingston","ON","Lucas James Watson","584347629","G1","No","Donna Bell","6134836593","donnabellforlife@gmail.com","TD","004","27002","6415028","1413 Thornwood Crescent"),
+  emp("s26-056","Brendan Donald McKenzie","Tree Planter","Field Operations","brendanmckenzie95@gmail.com","2896962991","St. Catharines","ON","Jolissa Lonsberry","529876583","","No","Tafean Williston","2896962991","","Tangerine","614","00152","4016978907","111 Fourth Ave #12"),
+  emp("s26-057","Benjamin Richard Leigh Ruben Mitchell","Tree Planter","Field Operations","footballben02@gmail.com","3439989232","Carleton Place","ON","Jolissa Lonsberry","566602470","G2","No","Melissa Mitchell","6132579232","missym_8@hotmail.com","Royal Bank of Canada","003","00842","5098215","124 William Street"),
+  emp("s26-058","James Stephen Samhaber","Tree Planter","Field Operations","james.samhaber@gmail.com","6137255987","Ottawa","ON","Adam Deruyte","533074936","G","No","Bruce Samhaber","6132976961","Bruce.samhaber@gmail.com","Scotiabank","002","20396","0279927","112 Kenora Street"),
+  emp("s26-059","Matthew Byrne Colas","Tree Planter","Field Operations","matthewcolas777@gmail.com","6479695268","Mississauga","ON","Richard Jackson Gattesco","551437353","G","No","Rosemary Colas","4169045268","roseandalexcolas@gmail.com","Wealthsimple","703","00001","31260821","448 Aqua Drive"),
+  emp("s26-060","Mouhamadoul Moustapha Ndoye","Tree Planter","Field Operations","moustaphandoye737@gmail.com","2638812093","Gatineau","QC","Richard Jackson Gattesco","969205913","","No","Abdoul Aziz Lam","3435532104","Axiloc2003@gmail.com","Desjardins","829","00107","0619213","A-18 Rue Demontigny"),
+  emp("s26-061","Noah Doell","Tree Planter","Field Operations","noahdoell041@gmail.com","6132502743","Peterborough","ON","Jolissa Lonsberry","599315157","G","No","Carley Doell","6138594881","cdoell44@gmail.com","RBC","003","01672","5185707","28A Springbrook Drive"),
+  emp("s26-062","Real Bain","Tree Planter","Field Operations","rayraybain001@gmail.com","6477248941","Toronto","ON","Richard Jackson Gattesco","552450926","","No","Nancy Patel","6476808784","Onsitehealth@rogers.com","RBC","003","06352","5094370","225 Gladstone Avenue"),
+  emp("s26-063","Sebastian Candela","Tree Planter","Field Operations","sebicand@gmail.com","6138934636","Kingston","ON","Jolissa Lonsberry","569796881","G","No","Rudy Candela","6135442658","candelar@limestone.on.ca","TD Bank","004","01392","6710220","46 Mowat Ave"),
 ];
 
 // Exact crew boss name → list of planter emails
@@ -130,6 +138,10 @@ const CREW_ASSIGNMENTS: Record<string, string[]> = {
     "cheelijahjames@gmail.com",
     "keona8@rocketmail.com",
     "brandyw0399@gmail.com",
+    "brendanmckenzie95@gmail.com",
+    "footballben02@gmail.com",
+    "noahdoell041@gmail.com",
+    "sebicand@gmail.com",
   ],
   "Richard Jackson Gattesco": [
     "malcolmcowley005@gmail.com",
@@ -143,6 +155,10 @@ const CREW_ASSIGNMENTS: Record<string, string[]> = {
     "chloemenard24@gmail.com",
     "forrestcurrie.fc@gmail.com",
     "cheansley5@gmail.com",
+    "matthewcolas777@gmail.com",
+    "moustaphandoye737@gmail.com",
+    "rayraybain001@gmail.com",
+    "neulandchristoph@gmail.com",
   ],
   "Lucas James Watson": [
     "aidan.mcdonald21@gmail.com",
@@ -171,6 +187,7 @@ const CREW_ASSIGNMENTS: Record<string, string[]> = {
     "djorbobakhit@gmail.com",
     "ethanwildrobin@gmail.com",
     "speicherjoey@gmail.com",
+    "james.samhaber@gmail.com",
   ],
 };
 

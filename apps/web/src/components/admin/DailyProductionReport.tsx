@@ -17,6 +17,7 @@ interface SpeciesRate {
   tierThreshold?: number;       // e.g. 1500 — trees < this → rateBelow, else → rateAbove
   rateBelowThreshold?: number;
   rateAboveThreshold?: number;
+  treesPerBox?: number;         // optional: enables box-based entry (trees = boxes × treesPerBox)
 }
 
 interface ProductionLine {
@@ -54,6 +55,7 @@ interface DraftLine {
   id: string;
   speciesId: string;
   trees: string;
+  boxes?: string;
 }
 
 interface DraftPlanter {
@@ -93,7 +95,7 @@ const INITIAL_RATES: SpeciesRate[] = [
 ];
 
 const EMPTY_SESSION: SessionForm = {
-  date: new Date().toISOString().slice(0, 10),
+  date: todayStr(),
   crewBoss: "", project: "", block: "", camp: "", shift: "Day", notes: "",
   equipmentOnBlock: "", equipmentFuelLevel: "", vehicleFuelLevel: "",
   planForTomorrow: "", needsNotes: "",
@@ -101,7 +103,10 @@ const EMPTY_SESSION: SessionForm = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function todayStr() { return new Date().toISOString().slice(0, 10); }
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 function fmt(n: number) { return n.toLocaleString("en-CA"); }
 function fmtC(n: number) {
   return "$" + n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -187,6 +192,8 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   // Client Summary tab
   const [clientDateFrom, setClientDateFrom] = useState(todayStr());
   const [clientDateTo,   setClientDateTo]   = useState(todayStr());
+  const [generateForDate, setGenerateForDate] = useState(todayStr());
+  const [showGenerate, setShowGenerate] = useState(false);
   const [clientSelectedProjects, setClientSelectedProjects] = useState<Set<string>>(new Set());
   const [clientSelectedBlocks,   setClientSelectedBlocks]   = useState<Set<string>>(new Set());
 
@@ -221,7 +228,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [supLoadNum, setSupLoadNum] = useState("");
   const [supBy, setSupBy]           = useState("");
   const [supNotes, setSupNotes]     = useState("");
-  const [supLines, setSupLines]     = useState<{ id: string; speciesId: string; trees: string }[]>(
+  const [supLines, setSupLines]     = useState<{ id: string; speciesId: string; trees: string; boxes?: string }[]>(
     [{ id: uid(), speciesId: "", trees: "" }]
   );
   const [supSaving, setSupSaving]       = useState(false);
@@ -338,7 +345,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [editingRateId, setEditingRateId]   = useState<string | null>(null);
   const [rateForm, setRateForm] = useState<Omit<SpeciesRate, "id">>({
     species: "", code: "", rateBucket: "", rateType: "flat", ratePerTree: 0,
-    tierThreshold: undefined, rateBelowThreshold: undefined, rateAboveThreshold: undefined,
+    tierThreshold: undefined, rateBelowThreshold: undefined, rateAboveThreshold: undefined, treesPerBox: undefined,
   });
 
   // ── Load from IndexedDB ────────────────────────────────────────────────
@@ -757,17 +764,44 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     setOpenExport(null);
   }
 
-  function printClientSummary() {
-    const logoUrl = `${window.location.origin}/integrity-logo.png`;
-    const blocks = clientBlockSummary.filter(b =>
+  function buildClientBlocks(forDate?: string) {
+    if (forDate) {
+      // Compute directly from entries for the given date — no state dependency
+      const map = new Map<string, { project: string; block: string; totalTrees: number; planters: Set<string>; dates: Set<string>; species: Map<string, { code: string; trees: number }> }>();
+      for (const e of entries) {
+        if (e.date !== forDate) continue;
+        const proj = e.project || "(No Project)";
+        const blk  = e.block   || "(No Block)";
+        const key  = `${proj}|${blk}`;
+        if (!map.has(key)) map.set(key, { project: proj, block: blk, totalTrees: 0, planters: new Set(), dates: new Set(), species: new Map() });
+        const rec = map.get(key)!;
+        rec.totalTrees += e.totalTrees;
+        rec.planters.add(e.employeeId || e.employeeName);
+        rec.dates.add(e.date);
+        for (const l of e.production) {
+          const s = rec.species.get(l.species) ?? { code: l.code, trees: 0 };
+          s.trees += l.trees;
+          rec.species.set(l.species, s);
+        }
+      }
+      return [...map.values()].sort((a, b) => (a.project + a.block).localeCompare(b.project + b.block));
+    }
+    return clientBlockSummary.filter(b =>
       (clientSelectedProjects.size === 0 || clientSelectedProjects.has(b.project)) &&
       (clientSelectedBlocks.size === 0   || clientSelectedBlocks.has(`${b.project}|${b.block}`))
     );
+  }
+
+  function printClientSummary(forDate?: string) {
+    const logoUrl = `${window.location.origin}/integrity-logo.png`;
+    const blocks = buildClientBlocks(forDate);
     const totalTrees = blocks.reduce((s, b) => s + b.totalTrees, 0);
     const allDates   = [...new Set(blocks.flatMap(b => [...b.dates]))].sort();
-    const dateLabel  = clientDateFrom === clientDateTo
-      ? clientDateFrom
-      : `${clientDateFrom} — ${clientDateTo}`;
+    const dateLabel  = forDate
+      ? forDate
+      : clientDateFrom === clientDateTo
+        ? clientDateFrom
+        : `${clientDateFrom} — ${clientDateTo}`;
 
     const blockRows = blocks.map(b => {
       const speciesRows = [...b.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
@@ -1438,7 +1472,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
   function openAddRate() {
     setEditingRateId(null);
-    setRateForm({ species: "", code: "", rateBucket: "", rateType: "flat", ratePerTree: 0, tierThreshold: undefined, rateBelowThreshold: undefined, rateAboveThreshold: undefined });
+    setRateForm({ species: "", code: "", rateBucket: "", rateType: "flat", ratePerTree: 0, tierThreshold: undefined, rateBelowThreshold: undefined, rateAboveThreshold: undefined, treesPerBox: undefined });
     setShowRateModal(true);
   }
 
@@ -1447,7 +1481,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     setRateForm({
       species: r.species, code: r.code, rateBucket: r.rateBucket,
       rateType: r.rateType ?? "flat", ratePerTree: r.ratePerTree,
-      tierThreshold: r.tierThreshold, rateBelowThreshold: r.rateBelowThreshold, rateAboveThreshold: r.rateAboveThreshold,
+      tierThreshold: r.tierThreshold, rateBelowThreshold: r.rateBelowThreshold, rateAboveThreshold: r.rateAboveThreshold, treesPerBox: r.treesPerBox,
     });
     setShowRateModal(true);
   }
@@ -1641,8 +1675,8 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
                   {/* Species lines */}
                   <div className="px-5 py-4 space-y-2">
-                    <div className="grid grid-cols-[1fr_110px_70px_90px_24px] gap-2 mb-1">
-                      {["Species", "Trees", "$/Tree", "Earnings", ""].map(h => (
+                    <div className="grid grid-cols-[1fr_80px_110px_70px_90px_24px] gap-2 mb-1">
+                      {["Species", "Boxes", "Trees", "$/Tree", "Earnings", ""].map(h => (
                         <div key={h} className="text-[10px] uppercase tracking-widest font-semibold text-text-tertiary text-right first:text-left">{h}</div>
                       ))}
                     </div>
@@ -1651,17 +1685,31 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                       const trees = parseInt(line.trees) || 0;
                       const rpt   = rate ? resolveRate(rate, trees, sst.get(rate.id)) : 0;
                       const earnings = rate ? trees * rpt : 0;
+                      const hasBoxRate = (rate?.treesPerBox ?? 0) > 0;
                       return (
-                        <div key={line.id} className="grid grid-cols-[1fr_110px_70px_90px_24px] gap-2 items-center">
-                          <select value={line.speciesId} onChange={e => updateLine(planter.id, line.id, { speciesId: e.target.value })}
+                        <div key={line.id} className="grid grid-cols-[1fr_80px_110px_70px_90px_24px] gap-2 items-center">
+                          <select value={line.speciesId} onChange={e => updateLine(planter.id, line.id, { speciesId: e.target.value, boxes: undefined })}
                             className="text-xs bg-surface-secondary border border-border rounded-lg px-3 py-1.5 text-text-primary focus:outline-none focus:border-primary/50">
                             <option value="">Species…</option>
                             {rates.map(r => (
                               <option key={r.id} value={r.id}>{r.code} – {r.species}{r.rateBucket ? ` (${r.rateBucket})` : ""}</option>
                             ))}
                           </select>
+                          {hasBoxRate ? (
+                            <input type="number" min="0" value={line.boxes ?? ""}
+                              onChange={e => {
+                                const boxes = e.target.value;
+                                const computed = boxes !== "" ? String(Math.round(Number(boxes) * (rate!.treesPerBox ?? 0))) : "";
+                                updateLine(planter.id, line.id, { boxes, trees: computed });
+                              }}
+                              placeholder="0"
+                              title={`× ${rate!.treesPerBox} trees/box`}
+                              className="text-xs bg-surface-secondary border border-border rounded-lg px-3 py-1.5 text-text-primary text-right focus:outline-none focus:border-primary/50" />
+                          ) : (
+                            <div className="text-right text-xs text-text-tertiary">—</div>
+                          )}
                           <input type="number" min="0" value={line.trees}
-                            onChange={e => updateLine(planter.id, line.id, { trees: e.target.value })}
+                            onChange={e => updateLine(planter.id, line.id, { trees: e.target.value, boxes: undefined })}
                             placeholder="0"
                             className="text-xs bg-surface-secondary border border-border rounded-lg px-3 py-1.5 text-text-primary text-right focus:outline-none focus:border-primary/50" />
                           <div className="text-right text-xs text-text-tertiary">
@@ -2311,7 +2359,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
             setSupLoadNum(d.loadNumber ?? "");
             setSupBy(d.deliveredBy ?? "");
             setSupNotes(d.notes ?? "");
-            setSupLines(d.lines.map(l => ({ id: l.id, speciesId: l.speciesId, trees: String(l.trees) })));
+            setSupLines(d.lines.map(l => ({ id: l.id, speciesId: l.speciesId, trees: String(l.trees), boxes: undefined })));
             window.scrollTo({ top: 0, behavior: "smooth" });
           }
 
@@ -2404,24 +2452,38 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
                 {/* Species lines */}
                 <div>
-                  <div className="grid grid-cols-[1fr_110px_24px] gap-2 mb-1.5">
-                    {["Species", "Trees Delivered", ""].map(h => (
+                  <div className="grid grid-cols-[1fr_80px_110px_24px] gap-2 mb-1.5">
+                    {["Species", "Boxes", "Trees Delivered", ""].map(h => (
                       <div key={h} className="text-[10px] uppercase tracking-widest font-semibold text-text-tertiary">{h}</div>
                     ))}
                   </div>
                   <div className="space-y-2">
                     {supLines.map(line => {
                       const rate = rates.find(r => r.id === line.speciesId);
+                      const hasBoxRate = (rate?.treesPerBox ?? 0) > 0;
                       return (
-                        <div key={line.id} className="grid grid-cols-[1fr_110px_24px] gap-2 items-center">
+                        <div key={line.id} className="grid grid-cols-[1fr_80px_110px_24px] gap-2 items-center">
                           <select value={line.speciesId}
-                            onChange={e => setSupLines(prev => prev.map(l => l.id === line.id ? { ...l, speciesId: e.target.value } : l))}
+                            onChange={e => setSupLines(prev => prev.map(l => l.id === line.id ? { ...l, speciesId: e.target.value, boxes: undefined, trees: "" } : l))}
                             className="text-xs bg-surface-secondary border border-border rounded-lg px-3 py-1.5 text-text-primary focus:outline-none focus:border-primary/50">
                             <option value="">Species…</option>
                             {rates.map(r => <option key={r.id} value={r.id}>{r.code} – {r.species}</option>)}
                           </select>
+                          {hasBoxRate ? (
+                            <input type="number" min="0" value={line.boxes ?? ""}
+                              onChange={e => {
+                                const boxes = e.target.value;
+                                const computed = boxes !== "" ? String(Math.round(Number(boxes) * (rate!.treesPerBox ?? 0))) : "";
+                                setSupLines(prev => prev.map(l => l.id === line.id ? { ...l, boxes, trees: computed } : l));
+                              }}
+                              placeholder="0"
+                              title={`× ${rate!.treesPerBox} trees/box`}
+                              className="text-xs bg-surface-secondary border border-border rounded-lg px-3 py-1.5 text-text-primary text-right focus:outline-none focus:border-primary/50" />
+                          ) : (
+                            <div className="text-right text-xs text-text-tertiary">—</div>
+                          )}
                           <input type="number" min="0" value={line.trees} placeholder="0"
-                            onChange={e => setSupLines(prev => prev.map(l => l.id === line.id ? { ...l, trees: e.target.value } : l))}
+                            onChange={e => setSupLines(prev => prev.map(l => l.id === line.id ? { ...l, trees: e.target.value, boxes: undefined } : l))}
                             className="text-xs bg-surface-secondary border border-border rounded-lg px-3 py-1.5 text-text-primary text-right focus:outline-none focus:border-primary/50" />
                           <button
                             onClick={() => setSupLines(prev => prev.filter(l => l.id !== line.id))}
@@ -4866,7 +4928,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-border bg-surface-secondary">
-                    {["Species","Code","Rate Bucket","Rate",""].map(h => (
+                    {["Species","Code","Rate Bucket","Rate","Trees/Box",""].map(h => (
                       <th key={h} className="px-4 py-2.5 text-left text-[10px] uppercase tracking-widest font-semibold text-text-tertiary">{h}</th>
                     ))}
                   </tr>
@@ -4888,6 +4950,9 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                             </span>
                           : `$${r.ratePerTree.toFixed(4)}`
                         }
+                      </td>
+                      <td className="px-4 py-3 text-text-secondary">
+                        {r.treesPerBox ? <span className="font-mono font-semibold text-text-primary">{r.treesPerBox}</span> : <span className="text-text-tertiary">—</span>}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -4967,37 +5032,80 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
             <div className="max-w-5xl mx-auto space-y-5">
 
               {/* Header */}
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <div className="text-sm font-semibold text-text-primary">Client Summary</div>
                   <div className="text-xs text-text-tertiary mt-0.5">Production report for client delivery — pricing excluded</div>
                 </div>
-                {allBlocks.length > 0 && (
-                  <div className="relative" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                  {/* Generate for date */}
+                  <div className="relative">
                     <button
-                      onClick={() => setOpenExport(v => v === "client" ? null : "client")}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all hover:opacity-90"
-                      style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                      onClick={() => { setShowGenerate(v => !v); setOpenExport(null); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-surface hover:bg-surface-secondary transition-all text-text-primary"
                     >
-                      Export as
-                      <svg className="w-3 h-3 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                      Generate for date
                     </button>
-                    {openExport === "client" && (
-                      <div className="absolute right-0 top-full mt-1 w-44 bg-surface border border-border rounded-xl shadow-xl z-20 overflow-hidden">
-                        <button onClick={printClientSummary} className="w-full text-left px-4 py-2.5 text-xs text-text-primary hover:bg-surface-secondary transition-colors flex items-center gap-2">
-                          <span className="text-text-tertiary">⎙</span> Print / Save PDF
+                    {showGenerate && (
+                      <div className="absolute right-0 top-full mt-1 w-64 bg-surface border border-border rounded-xl shadow-xl z-20 p-3 space-y-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Generate report for a single day</div>
+                        <input
+                          type="date"
+                          value={generateForDate}
+                          onChange={e => setGenerateForDate(e.target.value)}
+                          className="w-full text-xs rounded-lg border border-border bg-surface-secondary px-3 py-2 text-text-primary focus:outline-none focus:border-primary"
+                        />
+                        <button
+                          onClick={() => {
+                            setShowGenerate(false);
+                            printClientSummary(generateForDate);
+                          }}
+                          className="w-full py-2 text-xs font-semibold rounded-lg transition-all hover:opacity-90"
+                          style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                        >
+                          Generate &amp; Print
                         </button>
                       </div>
                     )}
                   </div>
-                )}
+
+                  {/* Export as */}
+                  {allBlocks.length > 0 && (
+                    <div className="relative">
+                      <button
+                        onClick={() => { setOpenExport(v => v === "client" ? null : "client"); setShowGenerate(false); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all hover:opacity-90"
+                        style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                      >
+                        Export as
+                        <svg className="w-3 h-3 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+                      </button>
+                      {openExport === "client" && (
+                        <div className="absolute right-0 top-full mt-1 w-44 bg-surface border border-border rounded-xl shadow-xl z-20 overflow-hidden">
+                          <button onClick={printClientSummary} className="w-full text-left px-4 py-2.5 text-xs text-text-primary hover:bg-surface-secondary transition-colors flex items-center gap-2">
+                            <span className="text-text-tertiary">⎙</span> Print / Save PDF
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {allBlocks.length === 0 ? (
                 <div className="bg-surface border border-border rounded-xl px-5 py-16 text-center">
                   <div className="text-3xl opacity-20 mb-2">⬡</div>
-                  <div className="text-xs text-text-tertiary">No production entries logged yet.</div>
-                  <button onClick={() => setTab("entry")} className="mt-3 text-xs text-primary hover:underline">Log production →</button>
+                  {entries.length === 0 ? (
+                    <>
+                      <div className="text-xs text-text-tertiary">No production entries logged yet.</div>
+                      <button onClick={() => setTab("entry")} className="mt-3 text-xs text-primary hover:underline">Log production →</button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-xs text-text-tertiary">No entries for this date range.</div>
+                      <div className="text-[11px] text-text-tertiary mt-1 opacity-60">Try widening the From / To dates above.</div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <>
@@ -5352,6 +5460,11 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                       const treesPlanted   = b.totalTrees;
                       const remaining      = prescription > 0 ? prescription - treesPlanted : null;
 
+                      const pbEntry = projectBlocks.find(pb => pb.blockName.trim().toLowerCase() === b.block.trim().toLowerCase());
+                      const prescriptionBySpecies = pbEntry
+                        ? new Map(pbEntry.allocations.map(a => [a.species.trim().toLowerCase(), a.trees]))
+                        : new Map<string, number>();
+
                       async function updateTarget(field: "prescription" | "treesDelivered", raw: string) {
                         const val = parseInt(raw, 10);
                         const next: BlockTarget = {
@@ -5428,6 +5541,8 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                             {speciesRows.map(([species, s]) => {
                               const isAdj = latestAdjMap.has(`${b.project}|${b.block}|${species}`);
+                              const prescribed = prescriptionBySpecies.get(species.trim().toLowerCase()) ?? null;
+                              const spRemaining = prescribed !== null ? prescribed - s.trees : null;
                               return (
                                 <div key={species} className={`rounded-lg px-3 py-2 border ${isAdj ? "bg-amber-500/5 border-amber-500/30" : "bg-surface-secondary border-border"}`}>
                                   <div className="flex items-center justify-between mb-1">
@@ -5435,7 +5550,19 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                                     {isAdj && <span className="text-[9px] text-amber-500">✎</span>}
                                   </div>
                                   <div className="text-sm font-bold text-text-primary">{fmt(s.trees)}</div>
-                                  <div className="text-[10px] text-text-tertiary mt-0.5">{species}</div>
+                                  {prescribed !== null && (
+                                    <div className="text-[9px] text-text-tertiary mt-0.5">
+                                      of {fmt(prescribed)} prescribed
+                                    </div>
+                                  )}
+                                  {prescribed === null && (
+                                    <div className="text-[10px] text-text-tertiary mt-0.5">{species}</div>
+                                  )}
+                                  {spRemaining !== null && (
+                                    <div className={`text-[9px] font-semibold mt-0.5 ${spRemaining > 0 ? "text-text-tertiary" : "text-red-400"}`}>
+                                      {spRemaining > 0 ? `${fmt(spRemaining)} left` : `+${fmt(Math.abs(spRemaining))} over`}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -6116,6 +6243,15 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                   </div>
                 </>
               )}
+              <div>
+                <label className={labelCls}>Trees per Box (optional)</label>
+                <input type="number" min="1" step="1"
+                  value={rateForm.treesPerBox ?? ""}
+                  onChange={e => setRateForm(f => ({ ...f, treesPerBox: parseInt(e.target.value) || undefined }))}
+                  placeholder="e.g. 250"
+                  className={inputCls} />
+                <div className="text-[10px] text-text-tertiary mt-1">Enables box-based entry — trees = boxes × this number</div>
+              </div>
             </div>
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
               <button onClick={() => setShowRateModal(false)} className="px-4 py-2 text-xs font-medium text-text-secondary border border-border rounded-lg hover:bg-surface-secondary transition-colors">Cancel</button>
