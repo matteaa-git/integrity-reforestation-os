@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import type { Employee } from "@/app/admin/page";
 import { createClient } from "@/lib/supabase/client";
-import { getAllRecords, saveRecord, deleteRecord, getSupervisorDeliveries, saveSupervisorDelivery, deleteSupervisorDelivery, getTreeOrders, saveTreeOrder, deleteTreeOrder, getUpcomingBlockPlans, saveUpcomingBlockPlan, deleteUpcomingBlockPlan, getTreeTransfers, saveTreeTransfer, deleteTreeTransfer, getDeliveryPlans, saveDeliveryPlan, deleteDeliveryPlan, getAllBlockAdjustments, saveBlockAdjustment, deleteBlockAdjustment, getAllBlockTargets, saveBlockTarget, REEFER_STORAGE, type SupervisorDelivery, type SupervisorDeliveryLine, type NurseryLoad, type TreeOrder, type ProjectBlock, type UpcomingBlockPlan, type TreeTransfer, type TreeTransferLine, type DeliveryPlan, type DeliveryPlanLine, type BlockAdjustment, type BlockTarget } from "@/lib/adminDb";
+import { getAllRecords, saveRecord, deleteRecord, getSupervisorDeliveries, saveSupervisorDelivery, deleteSupervisorDelivery, getTreeOrders, saveTreeOrder, deleteTreeOrder, getUpcomingBlockPlans, saveUpcomingBlockPlan, deleteUpcomingBlockPlan, getTreeTransfers, saveTreeTransfer, deleteTreeTransfer, getDeliveryPlans, saveDeliveryPlan, deleteDeliveryPlan, getAllBlockAdjustments, saveBlockAdjustment, deleteBlockAdjustment, getAllBlockTargets, saveBlockTarget, REEFER_STORAGE, migrateFromIndexedDB, type SupervisorDelivery, type SupervisorDeliveryLine, type NurseryLoad, type TreeOrder, type ProjectBlock, type UpcomingBlockPlan, type TreeTransfer, type TreeTransferLine, type DeliveryPlan, type DeliveryPlanLine, type BlockAdjustment, type BlockTarget } from "@/lib/productionDb";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -359,6 +359,10 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   }, [userName]);
 
   useEffect(() => {
+    // Migrate any locally-stored IndexedDB data to Supabase on first load.
+    // On devices with no local data this is a fast no-op.
+    migrateFromIndexedDB().catch(e => console.warn("[migrate]", e));
+
     getAllRecords<SpeciesRate>("species_rates").then(saved => {
       if (saved.length === 0) {
         INITIAL_RATES.forEach(r => saveRecord("species_rates", r));

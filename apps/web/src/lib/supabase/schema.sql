@@ -348,6 +348,24 @@ create policy "session_drafts: own"
   using (auth.uid() = created_by)
   with check (auth.uid() = created_by);
 
+-- ── 11. Unified App Data Store (cross-device sync) ───────────
+-- Single JSONB table used by productionDb.ts for all production
+-- data that must be accessible from any device.
+create table if not exists public.app_data (
+  table_name  text not null,
+  id          text not null,
+  data        jsonb not null,
+  updated_at  timestamptz default now(),
+  primary key (table_name, id)
+);
+
+alter table public.app_data enable row level security;
+
+create policy "app_data: authenticated full access"
+  on public.app_data for all
+  using  (auth.uid() is not null)
+  with check (auth.uid() is not null);
+
 -- ============================================================
 -- Done. Now go to Authentication → Settings and set:
 --   Site URL: http://localhost:3010
