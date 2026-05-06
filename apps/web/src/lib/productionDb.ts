@@ -207,11 +207,14 @@ export async function migrateFromIndexedDB(): Promise<void> {
 
   console.log("[productionDb] Migrating local data to Supabase…");
   let totalMigrated = 0;
+  let totalLocalRecords = 0;
+  let anyFailures = false;
 
   for (const store of MIGRATE_STORES) {
     try {
       const records = await idbGetAll<{ id: string }>(store);
       if (!records.length) continue;
+      totalLocalRecords += records.length;
 
       const rows = records.map((r) => ({
         table_name: store,
@@ -226,13 +229,26 @@ export async function migrateFromIndexedDB(): Promise<void> {
 
       if (error) {
         console.error(`[productionDb] migrate ${store}:`, error.message);
+        anyFailures = true;
       } else {
         console.log(`[productionDb] migrated ${store}: ${records.length} records`);
         totalMigrated += records.length;
       }
     } catch (e) {
       console.warn(`[productionDb] migrate ${store} failed:`, e);
+      anyFailures = true;
     }
+  }
+
+  // Only mark migration complete if nothing failed. Otherwise we'd lock the
+  // user out of retry on next load and the data would appear lost.
+  if (anyFailures) {
+    console.error(
+      `[productionDb] Migration had failures — NOT marking complete. ` +
+      `Local records: ${totalLocalRecords}, migrated: ${totalMigrated}. ` +
+      `Will retry on next page load.`
+    );
+    return;
   }
 
   localStorage.setItem(MIGRATION_KEY, "1");
