@@ -2839,6 +2839,15 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
           }
           const plantedTotal = dsEntries.reduce((s, e) => s + e.totalTrees, 0);
 
+          // Per-crew planted trees per block
+          const plantedByBlockByCrew = new Map<string, Map<string, number>>();
+          for (const e of dsEntries) {
+            if (!plantedByBlockByCrew.has(e.block)) plantedByBlockByCrew.set(e.block, new Map());
+            const crewMap = plantedByBlockByCrew.get(e.block)!;
+            const boss = e.crewBoss || "Unknown";
+            crewMap.set(boss, (crewMap.get(boss) ?? 0) + e.totalTrees);
+          }
+
           // ── Transfers: per-block per-species adjustments ──────────────────
           const transferInByBlock  = new Map<string, Map<string, { species: string; code: string; trees: number }>>();
           const transferOutByBlock = new Map<string, Map<string, { species: string; code: string; trees: number }>>();
@@ -3006,6 +3015,8 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                     {[...plantedByBlock.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([block, sMap]) => {
                       const blockTotal = [...sMap.values()].reduce((s, v) => s + v.trees, 0);
                       const planterCount = new Set(dsEntries.filter(e => e.block === block).map(e => e.employeeName)).size;
+                      const crewMap = plantedByBlockByCrew.get(block);
+                      const crewEntries = crewMap ? [...crewMap.entries()].sort((a, b) => b[1] - a[1]) : [];
                       return (
                         <div key={block} className="px-5 py-3">
                           <div className="flex items-center justify-between mb-2">
@@ -3023,6 +3034,16 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                               </span>
                             ))}
                           </div>
+                          {crewEntries.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-border/40">
+                              {crewEntries.map(([crew, trees]) => (
+                                <span key={crew} className="text-[10px] px-2 py-0.5 rounded-full bg-primary/8 border border-primary/20 font-medium">
+                                  <span className="text-text-tertiary">{crew}:</span>{" "}
+                                  <span className="text-text-primary font-semibold">{fmt(trees)}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -3148,6 +3169,26 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                                 })}
                               </div>
                             )}
+                            {/* Crew breakdown */}
+                            {(() => {
+                              const crewMap = plantedByBlockByCrew.get(b.block);
+                              if (!crewMap || crewMap.size === 0) return null;
+                              const crewList = [...crewMap.entries()].sort((a, bv) => bv[1] - a[1]);
+                              return (
+                                <div className="px-5 pb-3">
+                                  <div className="text-[9px] font-semibold uppercase tracking-widest text-text-tertiary mb-1.5">Planted by Crew</div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {crewList.map(([crew, trees]) => (
+                                      <span key={crew} className="text-[10px] px-2 py-0.5 rounded-full bg-primary/8 border border-primary/20 font-medium">
+                                        <span className="text-text-tertiary">{crew}:</span>{" "}
+                                        <span className="text-text-primary font-semibold">{fmt(trees)}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {/* Tree Orders for next day */}
                             {blockOrders.length > 0 && (
                               <div className="mx-5 mb-3 rounded-lg border border-border overflow-hidden">
