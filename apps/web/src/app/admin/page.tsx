@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/adminDb";
+import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/productionDb";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import AdminTopbar from "@/components/admin/AdminTopbar";
 import AdminDashboard from "@/components/admin/AdminDashboard";

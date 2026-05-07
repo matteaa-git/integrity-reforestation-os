@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Employee } from "@/app/admin/page";
-import { saveRecord } from "@/lib/adminDb";
+import { saveRecord } from "@/lib/productionDb";
 import { EMPLOYEES_2026, assignCrewBosses2026 } from "@/lib/employeeSeed2026";
 
 type SortField = "name" | "role" | "department" | "startDate" | "status";

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/adminDb";
+import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/productionDb";
 import { type UserRole, ROLE_PERMISSIONS } from "@/lib/roles";
 
 import MobileAdminShell      from "@/components/admin/MobileAdminShell";

@@ -13,7 +13,11 @@
  */
 
 import { createClient } from "@/lib/supabase/client";
-import { getAllRecords as idbGetAll } from "@/lib/adminDb";
+import {
+  getAllRecords as idbGetAll,
+  seedEmployeesData as idbSeedEmployees,
+  getAllEmployees as idbGetAllEmployees,
+} from "@/lib/adminDb";
 
 // Re-export constant and types so DailyProductionReport only needs one import
 export { REEFER_STORAGE } from "@/lib/adminDb";
@@ -175,6 +179,37 @@ export async function getAllBlockTargets(): Promise<BlockTarget[]> {
 }
 export async function saveBlockTarget(t: BlockTarget): Promise<void> {
   return sbUpsert("block_targets", t);
+}
+
+// ── Employees ───────────────────────────────────────────────────────────────
+// First-device-wins bootstrap: if Supabase already has employees we treat it
+// as canonical and never push from local IndexedDB (which prevents a tablet
+// with a colliding emp-id from overwriting the desktop's record). If Supabase
+// is empty, we run the IndexedDB seed and push the full local set up.
+
+export async function seedEmployeesData(): Promise<void> {
+  const existing = await sbGetAll<{ id: string }>("employees");
+  if (existing.length > 0) return;
+
+  await idbSeedEmployees();
+  const local = (await idbGetAllEmployees()) as { id: string }[];
+  if (!local.length) return;
+
+  const rows = local.map((e) => ({
+    table_name: "employees",
+    id: e.id,
+    data: e,
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await sb()
+    .from(APP_DATA_TABLE)
+    .upsert(rows, { onConflict: "table_name,id" });
+  if (error) console.error("[productionDb] employees bootstrap push:", error.message);
+  else console.log(`[productionDb] employees bootstrap: pushed ${rows.length} from local IDB`);
+}
+
+export async function getAllEmployees(): Promise<unknown[]> {
+  return sbGetAll<unknown>("employees");
 }
 
 // ── IndexedDB → Supabase migration ─────────────────────────────────────────
