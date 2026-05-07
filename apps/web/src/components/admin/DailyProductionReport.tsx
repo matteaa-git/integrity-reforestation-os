@@ -770,14 +770,14 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
 
   function buildClientBlocks(forDate?: string) {
     if (forDate) {
-      // Compute directly from entries for the given date — no state dependency
-      const map = new Map<string, { project: string; block: string; totalTrees: number; planters: Set<string>; dates: Set<string>; species: Map<string, { code: string; trees: number }> }>();
+      type CrewBreakdown = { totalTrees: number; planters: Set<string>; species: Map<string, { code: string; trees: number }> };
+      const map = new Map<string, { project: string; block: string; totalTrees: number; planters: Set<string>; dates: Set<string>; species: Map<string, { code: string; trees: number }>; crews: Map<string, CrewBreakdown> }>();
       for (const e of entries) {
         if (e.date !== forDate) continue;
         const proj = e.project || "(No Project)";
         const blk  = e.block   || "(No Block)";
         const key  = `${proj}|${blk}`;
-        if (!map.has(key)) map.set(key, { project: proj, block: blk, totalTrees: 0, planters: new Set(), dates: new Set(), species: new Map() });
+        if (!map.has(key)) map.set(key, { project: proj, block: blk, totalTrees: 0, planters: new Set(), dates: new Set(), species: new Map(), crews: new Map() });
         const rec = map.get(key)!;
         rec.totalTrees += e.totalTrees;
         rec.planters.add(e.employeeId || e.employeeName);
@@ -787,6 +787,16 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
           s.trees += l.trees;
           rec.species.set(l.species, s);
         }
+        const crewName = (e.crewBoss || "").trim() || "(No Crew)";
+        const crew = rec.crews.get(crewName) ?? { totalTrees: 0, planters: new Set<string>(), species: new Map<string, { code: string; trees: number }>() };
+        crew.totalTrees += e.totalTrees;
+        crew.planters.add(e.employeeId || e.employeeName);
+        for (const l of e.production) {
+          const cs = crew.species.get(l.species) ?? { code: l.code, trees: 0 };
+          cs.trees += l.trees;
+          crew.species.set(l.species, cs);
+        }
+        rec.crews.set(crewName, crew);
       }
       return [...map.values()].sort((a, b) => (a.project + a.block).localeCompare(b.project + b.block));
     }
@@ -821,6 +831,36 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
           <span style="font-size:18px;font-weight:800;color:#ffffff;line-height:1">${fmt(b.totalTrees)}</span>
           <span style="font-size:10px;color:#86efac;margin-top:3px">${b.planters.size} planter${b.planters.size !== 1 ? "s" : ""}</span>
         </div>`;
+
+      const crewRows = [...b.crews.entries()].sort((a, bv) => bv[1].totalTrees - a[1].totalTrees);
+      const crewSection = crewRows.length === 0 ? "" : `
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid #dcfce7">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.1em;color:#4ade80;text-transform:uppercase;margin-bottom:8px">By Crew</div>
+          <table style="width:100%;border-collapse:collapse;font-size:11px">
+            <thead>
+              <tr style="background:#f0fdf4;color:#166534">
+                <th style="text-align:left;padding:6px 8px;font-weight:700;border-bottom:1px solid #bbf7d0">Crew Boss</th>
+                <th style="text-align:right;padding:6px 8px;font-weight:700;border-bottom:1px solid #bbf7d0">Planters</th>
+                <th style="text-align:right;padding:6px 8px;font-weight:700;border-bottom:1px solid #bbf7d0">Total Trees</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:700;border-bottom:1px solid #bbf7d0">By Species</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${crewRows.map(([crewName, c]) => {
+                const cs = [...c.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
+                const speciesText = cs.map(([, ss]) => `<span style="font-family:monospace"><b>${ss.code}</b> ${fmt(ss.trees)}</span>`).join(" &nbsp; ");
+                return `
+                  <tr style="border-bottom:1px solid #f0fdf4">
+                    <td style="padding:6px 8px;color:#111827;font-weight:600">${crewName}</td>
+                    <td style="padding:6px 8px;text-align:right;color:#374151;font-variant-numeric:tabular-nums">${c.planters.size}</td>
+                    <td style="padding:6px 8px;text-align:right;color:#14532d;font-weight:700;font-variant-numeric:tabular-nums">${fmt(c.totalTrees)}</td>
+                    <td style="padding:6px 8px;color:#4b5563">${speciesText}</td>
+                  </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>`;
+
       return `
         <div style="margin-bottom:28px;page-break-inside:avoid">
           <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #dcfce7">
@@ -828,6 +868,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
             <div style="font-size:12px;color:#6b7280">${b.planters.size} planter${b.planters.size !== 1 ? "s" : ""} · ${fmt(b.totalTrees)} trees · ${[...b.dates].sort().join(", ")}</div>
           </div>
           <div style="display:flex;flex-wrap:wrap;gap:0">${chips}${totalChip}</div>
+          ${crewSection}
         </div>`;
     }).join("");
 
@@ -1407,17 +1448,23 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
       (!clientDateFrom || e.date >= clientDateFrom) &&
       (!clientDateTo   || e.date <= clientDateTo)
     );
+    type CrewBreakdown = {
+      totalTrees: number;
+      planters: Set<string>;
+      species: Map<string, { code: string; trees: number }>;
+    };
     const map = new Map<string, {
       project: string; block: string; totalTrees: number;
       planters: Set<string>;
       dates: Set<string>;
       species: Map<string, { code: string; trees: number }>;
+      crews: Map<string, CrewBreakdown>;
     }>();
     for (const e of clientFiltered) {
       const proj = e.project || "(No Project)";
       const blk  = e.block   || "(No Block)";
       const key  = `${proj}|${blk}`;
-      if (!map.has(key)) map.set(key, { project: proj, block: blk, totalTrees: 0, planters: new Set(), dates: new Set(), species: new Map() });
+      if (!map.has(key)) map.set(key, { project: proj, block: blk, totalTrees: 0, planters: new Set(), dates: new Set(), species: new Map(), crews: new Map() });
       const rec = map.get(key)!;
       rec.totalTrees += e.totalTrees;
       rec.planters.add(e.employeeId || e.employeeName);
@@ -1427,6 +1474,16 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
         s.trees += l.trees;
         rec.species.set(l.species, s);
       }
+      const crewName = (e.crewBoss || "").trim() || "(No Crew)";
+      const crew = rec.crews.get(crewName) ?? { totalTrees: 0, planters: new Set<string>(), species: new Map<string, { code: string; trees: number }>() };
+      crew.totalTrees += e.totalTrees;
+      crew.planters.add(e.employeeId || e.employeeName);
+      for (const l of e.production) {
+        const cs = crew.species.get(l.species) ?? { code: l.code, trees: 0 };
+        cs.trees += l.trees;
+        crew.species.set(l.species, cs);
+      }
+      rec.crews.set(crewName, crew);
     }
     return [...map.values()].sort((a, b) => (a.project + a.block).localeCompare(b.project + b.block));
   }, [entries, clientDateFrom, clientDateTo]);
@@ -5255,6 +5312,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                       <div className="divide-y divide-border/40">
                         {visibleBlocks.map(b => {
                           const speciesRows = [...b.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
+                          const crewRows = [...b.crews.entries()].sort((a, bv) => bv[1].totalTrees - a[1].totalTrees);
                           return (
                             <div key={`${b.project}|${b.block}`} className="px-5 py-4">
                               <div className="flex items-center gap-4 mb-3">
@@ -5279,6 +5337,30 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                                   <div className="text-[10px] text-text-tertiary mt-0.5">{b.planters.size} planters</div>
                                 </div>
                               </div>
+
+                              {/* Per-crew breakdown */}
+                              {crewRows.length > 0 && (
+                                <div className="mt-3 pt-3 border-t border-border/50">
+                                  <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary mb-2">By Crew</div>
+                                  <div className="space-y-1.5">
+                                    {crewRows.map(([crewName, c]) => {
+                                      const crewSpecies = [...c.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
+                                      return (
+                                        <div key={crewName} className="flex items-center gap-3 text-[11px]">
+                                          <div className="text-text-primary font-medium min-w-[120px] truncate">{crewName}</div>
+                                          <div className="text-text-tertiary tabular-nums">{c.planters.size} planter{c.planters.size !== 1 ? "s" : ""}</div>
+                                          <div className="text-text-primary font-semibold tabular-nums">{fmt(c.totalTrees)} trees</div>
+                                          <div className="text-text-tertiary text-[10px] flex flex-wrap gap-x-2">
+                                            {crewSpecies.map(([sp, ss]) => (
+                                              <span key={sp} className="font-mono"><span className="font-bold">{ss.code}</span> {fmt(ss.trees)}</span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
