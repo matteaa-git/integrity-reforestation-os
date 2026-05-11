@@ -138,7 +138,7 @@ function newDraftPlanter(): DraftPlanter {
   return { id: uid(), employeeId: "", employeeName: "", hoursWorked: "9", lines: [newLine()] };
 }
 
-type Tab = "entry" | "supervisor" | "daily" | "log" | "summary" | "rates" | "blocks" | "client" | "oversight" | "payroll" | "manual-changes";
+type Tab = "entry" | "supervisor" | "daily" | "reconcile" | "log" | "summary" | "rates" | "blocks" | "client" | "oversight" | "payroll" | "manual-changes";
 
 interface SavedSession {
   id: string;
@@ -283,6 +283,25 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
 
   // Supervisor Overview tab
   const [oversightDate, setOversightDate] = useState(todayStr());
+
+  // Reconciliation tab
+  const [reconcileTolerance, setReconcileTolerance] = useState<number>(3);
+  const [reconcileProjectFilter, setReconcileProjectFilter] = useState<string>("all");
+  const [reconcileShowOnlyVariance, setReconcileShowOnlyVariance] = useState<boolean>(false);
+  const [reconcileExpanded, setReconcileExpanded] = useState<Set<string>>(new Set());
+  const [reconcileClosedBlocks, setReconcileClosedBlocks] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(localStorage.getItem("reconcile_closed_blocks") ?? "[]")); }
+    catch { return new Set(); }
+  });
+  function toggleBlockClosed(blockKey: string) {
+    setReconcileClosedBlocks(prev => {
+      const next = new Set(prev);
+      if (next.has(blockKey)) next.delete(blockKey); else next.add(blockKey);
+      if (typeof window !== "undefined") localStorage.setItem("reconcile_closed_blocks", JSON.stringify([...next]));
+      return next;
+    });
+  }
 
   // Camp cost rate ($/day per planter) — persisted to localStorage
   const [campCostRate, setCampCostRate] = useState<number>(() => {
@@ -1616,7 +1635,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
       {/* Tab bar */}
       <div className="flex items-center border-b border-border px-6 bg-surface shrink-0 overflow-x-auto no-scrollbar">
-        {(["entry", "supervisor", "daily", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
+        {(["entry", "supervisor", "daily", "reconcile", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
           .filter(t => userRole === "crew_boss" ? t === "entry" : true)
           .map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -1624,7 +1643,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
               tab === t ? "border-primary text-primary" : "border-transparent text-text-secondary hover:text-text-primary"
             }`}
           >
-            {t === "entry" ? "Crew Boss Entry" : t === "supervisor" ? "Supervisor Entry" : t === "daily" ? "Inventory Tracking" : t === "log" ? "Production Reports" : t === "summary" ? "Earnings & Deductions" : t === "rates" ? "Species Rates" : t === "blocks" ? "Block Summary" : t === "client" ? "Client Summary" : t === "payroll" ? "Payroll" : t === "manual-changes" ? "Manual Changes" : "Supervisor Overview"}
+            {t === "entry" ? "Crew Boss Entry" : t === "supervisor" ? "Tree Deliveries" : t === "daily" ? "Inventory Tracking" : t === "reconcile" ? "Reconciliation" : t === "log" ? "Production Reports" : t === "summary" ? "Earnings & Deductions" : t === "rates" ? "Species Rates" : t === "blocks" ? "Block Summary" : t === "client" ? "Client Summary" : t === "payroll" ? "Payroll" : t === "manual-changes" ? "Manual Changes" : "Supervisor Overview"}
           </button>
         ))}
       </div>
@@ -3802,6 +3821,328 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                 );
               })()}
 
+            </div>
+          );
+        })()}
+
+        {/* ───────────────────────── RECONCILIATION ──────────────────────── */}
+        {tab === "reconcile" && (() => {
+          const filteredEntries    = entries.filter(e => reconcileProjectFilter === "all" || e.project === reconcileProjectFilter);
+          const filteredDeliveries = deliveries.filter(d => reconcileProjectFilter === "all" || d.project === reconcileProjectFilter);
+
+          interface SpeciesAgg { species: string; code: string; trees: number }
+          interface BlockAgg {
+            block: string;
+            delivered: Map<string, SpeciesAgg>;
+            xferIn:    Map<string, SpeciesAgg>;
+            xferOut:   Map<string, SpeciesAgg>;
+            planted:   Map<string, SpeciesAgg>;
+            crewPlanted: Map<string, number>;
+          }
+          const blockMap = new Map<string, BlockAgg>();
+          function getBlock(b: string): BlockAgg {
+            if (!blockMap.has(b)) blockMap.set(b, {
+              block: b,
+              delivered: new Map(), xferIn: new Map(), xferOut: new Map(), planted: new Map(),
+              crewPlanted: new Map(),
+            });
+            return blockMap.get(b)!;
+          }
+          function bump(m: Map<string, SpeciesAgg>, l: { speciesId: string; species: string; code: string; trees: number }) {
+            const ex = m.get(l.speciesId) ?? { species: l.species, code: l.code, trees: 0 };
+            ex.trees += l.trees;
+            m.set(l.speciesId, ex);
+          }
+          for (const d of filteredDeliveries) {
+            const rec = getBlock(d.block);
+            for (const l of d.lines) bump(rec.delivered, l);
+          }
+          for (const e of filteredEntries) {
+            const rec = getBlock(e.block);
+            for (const l of e.production) bump(rec.planted, l);
+            const crew = (e.crewBoss || "").trim() || "(No Crew)";
+            rec.crewPlanted.set(crew, (rec.crewPlanted.get(crew) ?? 0) + e.totalTrees);
+          }
+          for (const t of transfers) {
+            const outRec = getBlock(t.fromBlock);
+            for (const l of t.lines) bump(outRec.xferOut, l);
+            const inRec = getBlock(t.toBlock);
+            for (const l of t.lines) bump(inRec.xferIn, l);
+          }
+
+          const blockRows = [...blockMap.values()]
+            .filter(b => b.block !== REEFER_STORAGE && b.block !== "")
+            .map(b => {
+              const delivered = [...b.delivered.values()].reduce((s, v) => s + v.trees, 0);
+              const xferIn    = [...b.xferIn.values()].reduce((s, v) => s + v.trees, 0);
+              const xferOut   = [...b.xferOut.values()].reduce((s, v) => s + v.trees, 0);
+              const planted   = [...b.planted.values()].reduce((s, v) => s + v.trees, 0);
+              const net       = delivered + xferIn - xferOut;
+              const variance  = planted - net;
+              const variancePct = net > 0 ? (variance / net) * 100 : 0;
+              const isClosed  = reconcileClosedBlocks.has(b.block);
+              let flag: "clean" | "overclaim" | "underclaim" | "active" = "clean";
+              if (Math.abs(variancePct) <= reconcileTolerance) flag = "clean";
+              else if (variancePct > 0) flag = "overclaim";
+              else if (isClosed) flag = "underclaim";
+              else flag = "active";
+
+              const allSpeciesIds = new Set([
+                ...b.delivered.keys(), ...b.xferIn.keys(), ...b.xferOut.keys(), ...b.planted.keys(),
+              ]);
+              const speciesRows = [...allSpeciesIds].map(sid => {
+                const dSp = b.delivered.get(sid);
+                const iSp = b.xferIn.get(sid);
+                const oSp = b.xferOut.get(sid);
+                const pSp = b.planted.get(sid);
+                const dTrees = dSp?.trees ?? 0;
+                const iTrees = iSp?.trees ?? 0;
+                const oTrees = oSp?.trees ?? 0;
+                const pTrees = pSp?.trees ?? 0;
+                const spNet  = dTrees + iTrees - oTrees;
+                const spVar  = pTrees - spNet;
+                const spVarPct = spNet > 0 ? (spVar / spNet) * 100 : 0;
+                return {
+                  speciesId: sid,
+                  species: dSp?.species ?? iSp?.species ?? oSp?.species ?? pSp?.species ?? sid,
+                  code:    dSp?.code    ?? iSp?.code    ?? oSp?.code    ?? pSp?.code    ?? "?",
+                  delivered: dTrees, xferIn: iTrees, xferOut: oTrees, planted: pTrees,
+                  net: spNet, variance: spVar, variancePct: spVarPct,
+                };
+              }).sort((a, x) => Math.abs(x.variance) - Math.abs(a.variance));
+
+              return {
+                block: b.block, delivered, xferIn, xferOut, planted, net,
+                variance, variancePct, flag, isClosed, speciesRows,
+                crewPlanted: b.crewPlanted,
+              };
+            });
+
+          const visibleBlocks = (reconcileShowOnlyVariance
+            ? blockRows.filter(b => b.flag === "overclaim" || b.flag === "underclaim")
+            : blockRows
+          ).slice().sort((a, b) => Math.abs(b.variancePct) - Math.abs(a.variancePct));
+
+          const totalDelivered = blockRows.reduce((s, b) => s + b.delivered, 0);
+          const totalPlanted   = blockRows.reduce((s, b) => s + b.planted, 0);
+          const totalVariance  = blockRows.reduce((s, b) => s + b.variance, 0);
+          const flaggedCount   = blockRows.filter(b => b.flag === "overclaim" || b.flag === "underclaim").length;
+
+          const crewMap = new Map<string, { crew: string; planted: number; attributedVariance: number; blocks: number }>();
+          for (const b of blockRows) {
+            if (b.planted === 0) continue;
+            for (const [crew, trees] of b.crewPlanted) {
+              const share = trees / b.planted;
+              const attributed = b.variance * share;
+              const ex = crewMap.get(crew) ?? { crew, planted: 0, attributedVariance: 0, blocks: 0 };
+              ex.planted += trees;
+              ex.attributedVariance += attributed;
+              ex.blocks += 1;
+              crewMap.set(crew, ex);
+            }
+          }
+          const crewRows = [...crewMap.values()].sort((a, b) => b.attributedVariance - a.attributedVariance);
+
+          const projectsForFilter = [...new Set([
+            ...entries.map(e => e.project),
+            ...deliveries.map(d => d.project),
+          ].filter(Boolean))].sort();
+
+          const gridCols = "grid-cols-[1fr_repeat(5,90px)_120px_28px]";
+
+          return (
+            <div className="max-w-7xl mx-auto space-y-5">
+
+              {/* Filters */}
+              <div className="flex items-center gap-3 bg-surface border border-border rounded-xl px-5 py-3 flex-wrap">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary shrink-0">Filters</div>
+                <select value={reconcileProjectFilter} onChange={e => setReconcileProjectFilter(e.target.value)}
+                  className="text-xs border border-border rounded-lg px-3 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary/50">
+                  <option value="all">All Projects</option>
+                  {projectsForFilter.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-text-tertiary uppercase tracking-widest">Tolerance</span>
+                  <input type="number" min="0" max="50" step="0.5" value={reconcileTolerance}
+                    onChange={e => setReconcileTolerance(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-16 text-xs border border-border rounded-lg px-2 py-1.5 bg-surface text-text-primary focus:outline-none focus:border-primary/50" />
+                  <span className="text-[10px] text-text-tertiary">%</span>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer ml-2">
+                  <input type="checkbox" checked={reconcileShowOnlyVariance}
+                    onChange={e => setReconcileShowOnlyVariance(e.target.checked)} className="accent-primary" />
+                  <span className="text-xs text-text-secondary">Only show blocks outside tolerance</span>
+                </label>
+              </div>
+
+              {/* KPIs */}
+              <div className="grid grid-cols-4 gap-3">
+                {[
+                  { label: "Delivered to Blocks", value: fmt(totalDelivered), sub: `${blockRows.length} block${blockRows.length !== 1 ? "s" : ""}` },
+                  { label: "Trees Planted",       value: fmt(totalPlanted),   sub: totalDelivered > 0 ? `${((totalPlanted / totalDelivered) * 100).toFixed(1)}% of delivered` : "—" },
+                  { label: "Net Variance",        value: (totalVariance >= 0 ? "+" : "") + fmt(totalVariance), sub: totalDelivered > 0 ? `${((totalVariance / totalDelivered) * 100).toFixed(2)}% of delivered` : "—" },
+                  { label: "Blocks Flagged",      value: String(flaggedCount), sub: `tolerance ±${reconcileTolerance}%` },
+                ].map(k => (
+                  <div key={k.label} className="bg-surface border border-border rounded-xl p-4">
+                    <div className="text-[10px] uppercase tracking-widest font-semibold text-text-tertiary">{k.label}</div>
+                    <div className="text-2xl font-bold text-text-primary mt-1">{k.value}</div>
+                    <div className="text-[10px] text-text-tertiary mt-1">{k.sub}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Block reconciliation */}
+              <div className="bg-surface border border-border rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-border bg-surface-secondary/40">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Block Reconciliation</div>
+                  <div className="text-[10px] text-text-tertiary mt-0.5">All-time. Click a row to see species breakdown · mark closed blocks to apply strict tolerance.</div>
+                </div>
+                {visibleBlocks.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-xs text-text-tertiary">No blocks to reconcile.</div>
+                ) : (
+                  <>
+                    <div className={`grid ${gridCols} gap-3 px-5 py-2 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary bg-surface-secondary/20 border-b border-border/50`}>
+                      <div>Block</div>
+                      <div className="text-right">Delivered</div>
+                      <div className="text-right">Xfer In</div>
+                      <div className="text-right">Xfer Out</div>
+                      <div className="text-right">Planted</div>
+                      <div className="text-right">Variance</div>
+                      <div className="text-center">Status</div>
+                      <div></div>
+                    </div>
+                    <div className="divide-y divide-border/50">
+                      {visibleBlocks.map(b => {
+                        const flagColor = b.flag === "overclaim" ? "bg-red-500/10 border-red-500/40 text-red-400"
+                          : b.flag === "underclaim" ? "bg-amber-500/10 border-amber-500/40 text-amber-400"
+                          : b.flag === "active" ? "bg-blue-500/10 border-blue-500/40 text-blue-400"
+                          : "bg-emerald-500/10 border-emerald-500/40 text-emerald-400";
+                        const flagLabel = b.flag === "overclaim" ? "Overclaim"
+                          : b.flag === "underclaim" ? "Underclaim"
+                          : b.flag === "active" ? "In Progress"
+                          : "Clean";
+                        const isExpanded = reconcileExpanded.has(b.block);
+                        return (
+                          <div key={b.block}>
+                            <button
+                              onClick={() => setReconcileExpanded(prev => {
+                                const next = new Set(prev);
+                                if (next.has(b.block)) next.delete(b.block); else next.add(b.block);
+                                return next;
+                              })}
+                              className="w-full px-5 py-3 hover:bg-surface-secondary/30 transition-colors text-left"
+                            >
+                              <div className={`grid ${gridCols} gap-3 items-center text-xs`}>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-semibold text-text-primary truncate">{b.block || "(No Block)"}</span>
+                                  {b.isClosed && (
+                                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface-secondary border border-border text-text-tertiary uppercase tracking-wider shrink-0">Closed</span>
+                                  )}
+                                </div>
+                                <div className="text-right tabular-nums text-text-secondary">{fmt(b.delivered)}</div>
+                                <div className="text-right tabular-nums text-text-secondary">{b.xferIn === 0 ? "—" : `+${fmt(b.xferIn)}`}</div>
+                                <div className="text-right tabular-nums text-text-secondary">{b.xferOut === 0 ? "—" : `−${fmt(b.xferOut)}`}</div>
+                                <div className="text-right tabular-nums text-text-primary font-semibold">{fmt(b.planted)}</div>
+                                <div className={`text-right tabular-nums font-bold ${b.variance > 0 ? "text-red-400" : b.variance < 0 ? "text-amber-400" : "text-text-secondary"}`}>
+                                  {b.variance === 0 ? "0" : (b.variance > 0 ? "+" : "") + fmt(b.variance)}
+                                  {b.net > 0 && <span className="text-[10px] font-normal ml-1">({b.variancePct >= 0 ? "+" : ""}{b.variancePct.toFixed(1)}%)</span>}
+                                </div>
+                                <div className={`text-center text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded border ${flagColor}`}>{flagLabel}</div>
+                                <div className="text-text-tertiary text-center">{isExpanded ? "▾" : "▸"}</div>
+                              </div>
+                            </button>
+                            {isExpanded && (
+                              <div className="px-5 py-3 bg-surface-secondary/20 border-t border-border/40">
+                                <div className={`grid ${gridCols} gap-3 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary mb-2`}>
+                                  <div>Species</div>
+                                  <div className="text-right">Delivered</div>
+                                  <div className="text-right">Xfer In</div>
+                                  <div className="text-right">Xfer Out</div>
+                                  <div className="text-right">Planted</div>
+                                  <div className="text-right">Variance</div>
+                                  <div></div><div></div>
+                                </div>
+                                <div className="space-y-1">
+                                  {b.speciesRows.map(s => (
+                                    <div key={s.speciesId} className={`grid ${gridCols} gap-3 text-xs items-center`}>
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="font-mono font-semibold text-text-tertiary w-6 shrink-0">{s.code}</span>
+                                        <span className="text-text-primary truncate">{s.species}</span>
+                                      </div>
+                                      <div className="text-right tabular-nums text-text-secondary">{fmt(s.delivered)}</div>
+                                      <div className="text-right tabular-nums text-text-secondary">{s.xferIn === 0 ? "—" : `+${fmt(s.xferIn)}`}</div>
+                                      <div className="text-right tabular-nums text-text-secondary">{s.xferOut === 0 ? "—" : `−${fmt(s.xferOut)}`}</div>
+                                      <div className="text-right tabular-nums text-text-primary">{fmt(s.planted)}</div>
+                                      <div className={`text-right tabular-nums font-semibold ${s.variance > 0 ? "text-red-400" : s.variance < 0 ? "text-amber-400" : "text-text-secondary"}`}>
+                                        {s.variance === 0 ? "0" : (s.variance > 0 ? "+" : "") + fmt(s.variance)}
+                                        {s.net > 0 && <span className="text-[10px] font-normal ml-1">({s.variancePct >= 0 ? "+" : ""}{s.variancePct.toFixed(1)}%)</span>}
+                                      </div>
+                                      <div></div><div></div>
+                                    </div>
+                                  ))}
+                                </div>
+                                <div className="mt-3 pt-3 border-t border-border/40 flex items-center justify-between gap-3">
+                                  <div className="text-[10px] text-text-tertiary truncate">
+                                    {b.crewPlanted.size > 0 && (
+                                      <>Crews: {[...b.crewPlanted.entries()].sort((a, x) => x[1] - a[1]).map(([c, t]) => `${c} (${fmt(t)})`).join(" · ")}</>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={ev => { ev.stopPropagation(); toggleBlockClosed(b.block); }}
+                                    className="text-[10px] px-3 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-primary/50 transition-colors shrink-0"
+                                  >
+                                    {b.isClosed ? "Reopen Block" : "Mark Closed"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* By Crew variance attribution */}
+              <div className="bg-surface border border-border rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-border bg-surface-secondary/40">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Crew Variance Attribution</div>
+                  <div className="text-[10px] text-text-tertiary mt-0.5">Each crew&apos;s share of block planting × block variance. Positive = overclaim suspect.</div>
+                </div>
+                {crewRows.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-xs text-text-tertiary">No crew data.</div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[1fr_120px_80px_140px_120px] gap-3 px-5 py-2 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary bg-surface-secondary/20 border-b border-border/50">
+                      <div>Crew Boss</div>
+                      <div className="text-right">Planted</div>
+                      <div className="text-right">Blocks</div>
+                      <div className="text-right">Attributed Var</div>
+                      <div className="text-right">% of Planted</div>
+                    </div>
+                    <div className="divide-y divide-border/50">
+                      {crewRows.map(c => {
+                        const pct = c.planted > 0 ? (c.attributedVariance / c.planted) * 100 : 0;
+                        const flagged = Math.abs(pct) > reconcileTolerance;
+                        return (
+                          <div key={c.crew} className="grid grid-cols-[1fr_120px_80px_140px_120px] gap-3 px-5 py-2.5 text-xs items-center">
+                            <div className="font-medium text-text-primary truncate">{c.crew}</div>
+                            <div className="text-right tabular-nums text-text-secondary">{fmt(c.planted)}</div>
+                            <div className="text-right tabular-nums text-text-tertiary">{c.blocks}</div>
+                            <div className={`text-right tabular-nums font-semibold ${c.attributedVariance > 0 ? "text-red-400" : c.attributedVariance < 0 ? "text-amber-400" : "text-text-secondary"}`}>
+                              {Math.round(c.attributedVariance) === 0 ? "0" : (c.attributedVariance > 0 ? "+" : "") + fmt(Math.round(c.attributedVariance))}
+                            </div>
+                            <div className={`text-right tabular-nums ${flagged ? (pct > 0 ? "text-red-400 font-bold" : "text-amber-400 font-bold") : "text-text-secondary"}`}>
+                              {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           );
         })()}
