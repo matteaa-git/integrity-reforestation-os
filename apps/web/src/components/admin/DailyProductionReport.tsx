@@ -289,16 +289,17 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [reconcileProjectFilter, setReconcileProjectFilter] = useState<string>("all");
   const [reconcileShowOnlyVariance, setReconcileShowOnlyVariance] = useState<boolean>(false);
   const [reconcileExpanded, setReconcileExpanded] = useState<Set<string>>(new Set());
-  const [reconcileClosedBlocks, setReconcileClosedBlocks] = useState<Set<string>>(() => {
-    if (typeof window === "undefined") return new Set();
-    try { return new Set(JSON.parse(localStorage.getItem("reconcile_closed_blocks") ?? "[]")); }
-    catch { return new Set(); }
-  });
+  const [reconcileClosedBlocks, setReconcileClosedBlocks] = useState<Set<string>>(new Set());
   function toggleBlockClosed(blockKey: string) {
     setReconcileClosedBlocks(prev => {
       const next = new Set(prev);
-      if (next.has(blockKey)) next.delete(blockKey); else next.add(blockKey);
-      if (typeof window !== "undefined") localStorage.setItem("reconcile_closed_blocks", JSON.stringify([...next]));
+      if (next.has(blockKey)) {
+        next.delete(blockKey);
+        deleteRecord("reconcile_closed_blocks", blockKey).catch(err => console.error("[reconcile] delete:", err));
+      } else {
+        next.add(blockKey);
+        saveRecord("reconcile_closed_blocks", { id: blockKey }).catch(err => console.error("[reconcile] save:", err));
+      }
       return next;
     });
   }
@@ -424,6 +425,25 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const map = new Map<string, BlockTarget>();
       for (const t of saved) map.set(t.id, t);
       setBlockTargets(map);
+    });
+    getAllRecords<{ id: string }>("reconcile_closed_blocks").then(saved => {
+      const remote = new Set(saved.map(r => r.id));
+      if (typeof window !== "undefined") {
+        try {
+          const localRaw = localStorage.getItem("reconcile_closed_blocks");
+          if (localRaw) {
+            const local = JSON.parse(localRaw) as string[];
+            for (const b of local) {
+              if (!remote.has(b)) {
+                remote.add(b);
+                saveRecord("reconcile_closed_blocks", { id: b }).catch(err => console.error("[reconcile] migrate:", err));
+              }
+            }
+            localStorage.removeItem("reconcile_closed_blocks");
+          }
+        } catch { /* ignore */ }
+      }
+      setReconcileClosedBlocks(remote);
     });
   }, []);
 
