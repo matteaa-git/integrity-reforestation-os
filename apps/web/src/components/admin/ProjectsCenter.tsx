@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import FilePreviewModal from "@/components/admin/FilePreviewModal";
+import BlockMapViewer from "@/components/admin/BlockMapViewer";
 import { seedNagagamiProject, type SeedProgress } from "@/lib/seedNagagami";
 import { seedAlgonquinProject } from "@/lib/seedAlgonquin";
 import {
@@ -157,6 +158,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
 
   // Preview / delete
   const [previewFile, setPreviewFile] = useState<ProjectFileResolved | null>(null);
+  const [mapViewer, setMapViewer]     = useState<{ file: ProjectFileResolved; blockName: string } | null>(null);
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [deleteFileTarget, setDeleteFileTarget] = useState<{ projectId: string; fileId: string } | null>(null);
 
@@ -1511,6 +1513,20 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                                     <div className="text-sm font-bold text-text-primary">{totalTrees.toLocaleString()}</div>
                                     <div className="text-[10px] text-text-tertiary">trees allocated</div>
                                   </div>
+                                  {b.mapFileId && (() => {
+                                    const mapFile = selectedProject.files.find(f => f.id === b.mapFileId);
+                                    if (!mapFile?.url) return null;
+                                    return (
+                                      <button
+                                        onClick={() => setMapViewer({ file: mapFile, blockName: b.blockName })}
+                                        className="text-[11px] font-medium border rounded-lg px-2.5 py-1.5 transition-colors flex items-center gap-1.5"
+                                        style={{ borderColor: "rgba(57,222,139,0.3)", color: "var(--color-primary)", background: "rgba(57,222,139,0.06)" }}
+                                        title="View map with live GPS"
+                                      >
+                                        <span>◎</span> Map
+                                      </button>
+                                    );
+                                  })()}
                                   <button onClick={() => openEditBlock(b)} className="text-[11px] text-text-tertiary hover:text-text-primary border border-border rounded-lg px-2.5 py-1.5 transition-colors">Edit</button>
                                   <button onClick={() => removeBlock(b.id)} className="text-[11px] text-danger hover:bg-red-50 border border-border rounded-lg px-2.5 py-1.5 transition-colors">×</button>
                                 </div>
@@ -2233,6 +2249,16 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
           url={previewFile.url}
           name={previewFile.name}
           onClose={() => setPreviewFile(null)}
+        />
+      )}
+
+      {/* Block map viewer with live GPS */}
+      {mapViewer && (
+        <BlockMapViewer
+          url={mapViewer.file.url}
+          name={mapViewer.file.name}
+          blockName={mapViewer.blockName}
+          onClose={() => setMapViewer(null)}
         />
       )}
 
