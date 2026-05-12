@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { parseGeoPdf, geoToCanvasPx, type GeoPdfMeta } from "@/lib/geopdf";
+import { parseGeoPdf, geoToCanvasPx, canvasPxToGeo, type GeoPdfMeta } from "@/lib/geopdf";
+import { getAllRecords, saveRecord, deleteRecord } from "@/lib/productionDb";
 
 interface Props {
   url: string;
@@ -16,7 +17,43 @@ interface Position {
   accuracy: number;
 }
 
+interface MapPin {
+  id: string;
+  blockName: string;
+  lat: number;
+  lng: number;
+  note: string;
+  createdAt: string;
+}
+
+// Mirror the QualityPlot shape that DailyProductionReport saves so we can
+// surface plots with GPS as read-only markers on this map.
+interface QualityPlotLite {
+  id: string;
+  blockName: string;
+  date: string;
+  plotNumber: string;
+  surveyor: string;
+  crewBoss: string;
+  treesPlanted: number;
+  goodTrees: number;
+  prescribedDensity?: number;
+  gpsLat?: string;
+  gpsLng?: string;
+}
+
+interface PopoverState {
+  mode: "new" | "existing";
+  pinId?: string;       // when editing an existing pin
+  lat: number;
+  lng: number;
+  screenX: number;      // viewport-relative px
+  screenY: number;
+  note: string;
+}
+
 const RENDER_SCALE = 2; // canvas px per PDF point — high enough to look sharp when zoomed in
+const DRAG_THRESHOLD = 5; // px — below this, a mouseup counts as a tap, not a pan
 
 export default function BlockMapViewer({ url, name, blockName, onClose }: Props) {
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
@@ -35,6 +72,114 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
   const [ty, setTy]   = useState(0);
   const [zoom, setZoom] = useState(1);
   const [autoFollow, setAutoFollow] = useState(true);
+
+  // Map pins + linked quality plots, all keyed to this block name.
+  const [pins, setPins]           = useState<MapPin[]>([]);
+  const [qPlots, setQPlots]       = useState<QualityPlotLite[]>([]);
+  const [dropMode, setDropMode]   = useState(false);
+  const [popover, setPopover]     = useState<PopoverState | null>(null);
+  const [savingPin, setSavingPin] = useState(false);
+  const noteInputRef              = useRef<HTMLTextAreaElement | null>(null);
+
+  // Load existing pins + quality plots for this block on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [allPins, allPlots] = await Promise.all([
+          getAllRecords<MapPin>("map_pins"),
+          getAllRecords<QualityPlotLite>("quality_plots"),
+        ]);
+        if (cancelled) return;
+        setPins(allPins.filter(p => p.blockName === blockName));
+        setQPlots(
+          allPlots.filter(
+            p => p.blockName === blockName
+              && !!p.gpsLat && !!p.gpsLng
+              && !Number.isNaN(parseFloat(p.gpsLat!))
+              && !Number.isNaN(parseFloat(p.gpsLng!)),
+          ),
+        );
+      } catch (err) {
+        console.warn("[BlockMapViewer] pin/plot load failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [blockName]);
+
+  // Auto-focus the note textarea when the popover opens.
+  useEffect(() => {
+    if (popover) {
+      const t = setTimeout(() => noteInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [popover?.pinId, popover?.mode]);
+
+  function uid() { return `pin-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
+
+  function openExistingPin(pin: MapPin, clientX: number, clientY: number) {
+    const vp = viewportRef.current?.getBoundingClientRect();
+    if (!vp) return;
+    setPopover({
+      mode: "existing",
+      pinId: pin.id,
+      lat: pin.lat,
+      lng: pin.lng,
+      screenX: clientX - vp.left,
+      screenY: clientY - vp.top,
+      note: pin.note,
+    });
+  }
+
+  function openNewPinAt(lat: number, lng: number, screenX: number, screenY: number) {
+    setPopover({ mode: "new", lat, lng, screenX, screenY, note: "" });
+  }
+
+  async function savePin() {
+    if (!popover) return;
+    setSavingPin(true);
+    try {
+      if (popover.mode === "new") {
+        const pin: MapPin = {
+          id: uid(),
+          blockName,
+          lat: popover.lat,
+          lng: popover.lng,
+          note: popover.note.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        await saveRecord("map_pins", pin);
+        setPins(prev => [...prev, pin]);
+      } else if (popover.pinId) {
+        const existing = pins.find(p => p.id === popover.pinId);
+        if (existing) {
+          const updated: MapPin = { ...existing, note: popover.note.trim() };
+          await saveRecord("map_pins", updated);
+          setPins(prev => prev.map(p => p.id === updated.id ? updated : p));
+        }
+      }
+      setPopover(null);
+      setDropMode(false);
+    } catch (err) {
+      console.error("[BlockMapViewer] save pin failed:", err);
+      alert("Couldn't save pin — check your connection and try again.");
+    } finally {
+      setSavingPin(false);
+    }
+  }
+
+  async function deletePin() {
+    if (!popover?.pinId) return;
+    if (!confirm("Delete this pin?")) return;
+    try {
+      await deleteRecord("map_pins", popover.pinId);
+      setPins(prev => prev.filter(p => p.id !== popover.pinId));
+      setPopover(null);
+    } catch (err) {
+      console.error("[BlockMapViewer] delete pin failed:", err);
+      alert("Couldn't delete pin.");
+    }
+  }
 
   // ── Load PDF + parse geo + render to canvas ────────────────────────────
   useEffect(() => {
@@ -160,7 +305,7 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
   }, [dot?.x, dot?.y, autoFollow, zoom, canvasSize]);
 
   // ── Pan / zoom interactions ────────────────────────────────────────────
-  const dragRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
+  const dragRef  = useRef<{ x: number; y: number; tx: number; ty: number; moved: boolean } | null>(null);
   const pinchRef = useRef<{ d: number; zoom: number; cx: number; cy: number; tx: number; ty: number } | null>(null);
 
   function getTouchDistance(a: React.Touch, b: React.Touch) {
@@ -168,6 +313,17 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
   }
   function getTouchCenter(a: React.Touch, b: React.Touch) {
     return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
+  }
+
+  function tryHandleTap(clientX: number, clientY: number) {
+    if (!dropMode || !meta) return;
+    const vp = viewportRef.current?.getBoundingClientRect();
+    if (!vp) return;
+    const canvasX = (clientX - vp.left - tx) / zoom;
+    const canvasY = (clientY - vp.top  - ty) / zoom;
+    const geo = canvasPxToGeo(canvasX, canvasY, meta, RENDER_SCALE);
+    if (!geo) return;
+    openNewPinAt(geo.lat, geo.lng, clientX - vp.left, clientY - vp.top);
   }
 
   function onWheel(e: React.WheelEvent) {
@@ -187,19 +343,27 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
 
   function onMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
-    dragRef.current = { x: e.clientX, y: e.clientY, tx, ty };
+    dragRef.current = { x: e.clientX, y: e.clientY, tx, ty, moved: false };
     setAutoFollow(false);
   }
   function onMouseMove(e: React.MouseEvent) {
     if (!dragRef.current) return;
-    setTx(dragRef.current.tx + (e.clientX - dragRef.current.x));
-    setTy(dragRef.current.ty + (e.clientY - dragRef.current.y));
+    const dx = e.clientX - dragRef.current.x;
+    const dy = e.clientY - dragRef.current.y;
+    if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragRef.current.moved = true;
+    setTx(dragRef.current.tx + dx);
+    setTy(dragRef.current.ty + dy);
   }
-  function onMouseUp() { dragRef.current = null; }
+  function onMouseUp(e: React.MouseEvent) {
+    if (dragRef.current && !dragRef.current.moved) {
+      tryHandleTap(e.clientX, e.clientY);
+    }
+    dragRef.current = null;
+  }
 
   function onTouchStart(e: React.TouchEvent) {
     if (e.touches.length === 1) {
-      dragRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty };
+      dragRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty, moved: false };
       pinchRef.current = null;
     } else if (e.touches.length === 2) {
       const d = getTouchDistance(e.touches[0], e.touches[1]);
@@ -225,12 +389,20 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
       setZoom(newZoom);
     } else if (e.touches.length === 1 && dragRef.current) {
       e.preventDefault();
-      setTx(dragRef.current.tx + (e.touches[0].clientX - dragRef.current.x));
-      setTy(dragRef.current.ty + (e.touches[0].clientY - dragRef.current.y));
+      const dx = e.touches[0].clientX - dragRef.current.x;
+      const dy = e.touches[0].clientY - dragRef.current.y;
+      if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) dragRef.current.moved = true;
+      setTx(dragRef.current.tx + dx);
+      setTy(dragRef.current.ty + dy);
     }
   }
   function onTouchEnd(e: React.TouchEvent) {
     if (e.touches.length === 0) {
+      // changedTouches has the lifted finger.
+      const t = e.changedTouches[0];
+      if (t && dragRef.current && !dragRef.current.moved) {
+        tryHandleTap(t.clientX, t.clientY);
+      }
       dragRef.current = null;
       pinchRef.current = null;
     }
@@ -266,6 +438,18 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
               {pos.lat.toFixed(5)}, {pos.lng.toFixed(5)} · ±{pos.accuracy.toFixed(0)} m
             </span>
           )}
+          <button
+            onClick={() => { setDropMode(v => !v); if (!dropMode) setAutoFollow(false); }}
+            className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+              dropMode
+                ? "border-amber-400/60 text-amber-400 bg-amber-400/10"
+                : "border-border text-text-secondary hover:text-text-primary"
+            }`}
+            title={dropMode ? "Tap the map to drop a pin (or click to cancel)" : "Drop a pin"}
+            disabled={!hasGeo || loading}
+          >
+            {dropMode ? "Tap map…" : "+ Pin"}
+          </button>
           <button
             onClick={() => { setAutoFollow(v => !v); }}
             className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
@@ -315,9 +499,75 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
       >
         <div
           className="absolute top-0 left-0 origin-top-left"
-          style={{ transform: `translate3d(${tx}px, ${ty}px, 0) scale(${zoom})` }}
+          style={{
+            transform: `translate3d(${tx}px, ${ty}px, 0) scale(${zoom})`,
+            cursor: dropMode ? "crosshair" : "grab",
+          }}
         >
           <canvas ref={canvasRef} className="block" />
+
+          {/* Saved note pins */}
+          {meta && pins.map(pin => {
+            const px = geoToCanvasPx(pin.lat, pin.lng, meta, RENDER_SCALE);
+            if (!px) return null;
+            return (
+              <button
+                key={pin.id}
+                onMouseDown={e => e.stopPropagation()}
+                onTouchStart={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); openExistingPin(pin, e.clientX, e.clientY); }}
+                className="absolute pointer-events-auto"
+                style={{
+                  left: px.x - 10, top: px.y - 22,
+                  width: 20, height: 22,
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+                title={pin.note || "Map pin"}
+              >
+                {/* Teardrop pin shape via SVG */}
+                <svg viewBox="0 0 20 22" width="20" height="22" style={{ display: "block", filter: "drop-shadow(0 2px 4px rgba(0,0,0,0.5))" }}>
+                  <path d="M10 0 C4.477 0 0 4.477 0 10 C0 17 10 22 10 22 C10 22 20 17 20 10 C20 4.477 15.523 0 10 0 Z" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                  <circle cx="10" cy="9" r="3" fill="#ffffff" />
+                </svg>
+              </button>
+            );
+          })}
+
+          {/* Quality plot markers (read-only) */}
+          {meta && qPlots.map(p => {
+            const lat = parseFloat(p.gpsLat!);
+            const lng = parseFloat(p.gpsLng!);
+            const px = geoToCanvasPx(lat, lng, meta, RENDER_SCALE);
+            if (!px) return null;
+            const q = p.treesPlanted > 0 ? (p.goodTrees / p.treesPlanted) * 100 : 0;
+            const tip = `Plot ${p.plotNumber || "—"} · ${p.date} · ${p.goodTrees}/${p.treesPlanted} good · ${q.toFixed(0)}%${p.crewBoss ? ` · ${p.crewBoss}` : ""}`;
+            return (
+              <div
+                key={p.id}
+                onMouseDown={e => e.stopPropagation()}
+                onTouchStart={e => e.stopPropagation()}
+                title={tip}
+                className="absolute pointer-events-auto"
+                style={{
+                  left: px.x - 11, top: px.y - 11,
+                  width: 22, height: 22,
+                }}
+              >
+                <div
+                  className="w-full h-full rounded-full flex items-center justify-center text-[11px] font-bold"
+                  style={{
+                    background: q >= 95 ? "#16a34a" : q >= 85 ? "#f59e0b" : "#dc2626",
+                    color: "#ffffff",
+                    border: "2px solid #ffffff",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.4)",
+                  }}
+                >Q</div>
+              </div>
+            );
+          })}
 
           {/* Accuracy ring + dot, in canvas-pixel coordinate space */}
           {dot && (
@@ -370,6 +620,77 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
         {!loading && hasGeo && posError && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[11px] px-3 py-1.5 rounded-lg shadow-lg">
             {posError}
+          </div>
+        )}
+
+        {/* Pin popover */}
+        {popover && (
+          <div
+            className="absolute z-20 bg-surface border border-border rounded-xl shadow-2xl p-4 w-72"
+            style={(() => {
+              const vpW = viewportRef.current?.clientWidth  ?? 1000;
+              const vpH = viewportRef.current?.clientHeight ?? 800;
+              // Place popover above the pin by default; flip below if too close to top.
+              const w = 288, h = 200;
+              let left = popover.screenX - w / 2;
+              let top  = popover.screenY - h - 24;
+              if (top < 12)  top  = popover.screenY + 24;
+              if (left < 12) left = 12;
+              if (left + w > vpW - 12) left = vpW - w - 12;
+              if (top + h > vpH - 12)  top  = vpH - h - 12;
+              return { left, top };
+            })()}
+            onMouseDown={e => e.stopPropagation()}
+            onTouchStart={e => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">
+                {popover.mode === "new" ? "New Pin" : "Pin"}
+              </div>
+              <div className="text-[10px] text-text-tertiary tabular-nums">
+                {popover.lat.toFixed(5)}, {popover.lng.toFixed(5)}
+              </div>
+            </div>
+            <textarea
+              ref={noteInputRef}
+              value={popover.note}
+              onChange={e => setPopover(prev => prev ? { ...prev, note: e.target.value } : prev)}
+              placeholder="Add a note…"
+              rows={3}
+              className="w-full px-3 py-2 text-xs bg-surface-secondary border border-border rounded-lg text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary/50 resize-none"
+            />
+            <div className="flex items-center justify-between gap-2 mt-3">
+              {popover.mode === "existing" ? (
+                <button
+                  onClick={deletePin}
+                  className="text-[11px] font-medium px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition-colors"
+                >
+                  Delete
+                </button>
+              ) : <div />}
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  onClick={() => setPopover(null)}
+                  className="text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={savePin}
+                  disabled={savingPin}
+                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-opacity disabled:opacity-50"
+                  style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                >
+                  {savingPin ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+            {/* Cross-link hint: tell user how to create a quality plot at this pin */}
+            <div className="mt-3 pt-3 border-t border-border/60 text-[10px] text-text-tertiary leading-relaxed">
+              Want a quality plot here? Open Daily Production → Quality Reports and
+              paste these coords into GPS Lat / GPS Lng.
+            </div>
           </div>
         )}
 

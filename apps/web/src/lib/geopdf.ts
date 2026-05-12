@@ -155,3 +155,59 @@ export function geoToCanvasPx(
     insideMap: u >= 0 && u <= 1 && v >= 0 && v <= 1,
   };
 }
+
+/**
+ * Forward bilinear projection: (u, v) ∈ [0,1]² → geographic (lat, lng).
+ * The four corners are reordered the same way as geoToUnitSquare for consistency.
+ */
+export function unitSquareToGeo(
+  u: number,
+  v: number,
+  corners: GeoPdfMeta["corners"],
+): [number, number] {
+  const pick = (ut: number, vt: number) =>
+    corners.reduce(
+      (best, c) => {
+        const d = Math.hypot(c.lpt[0] - ut, c.lpt[1] - vt);
+        return d < best.d ? { d, c } : best;
+      },
+      { d: Infinity, c: corners[0] },
+    ).c.geo;
+
+  const p00 = pick(0, 0);
+  const p01 = pick(0, 1);
+  const p11 = pick(1, 1);
+  const p10 = pick(1, 0);
+
+  const a = (1 - u) * (1 - v);
+  const b = (1 - u) * v;
+  const c = u * v;
+  const d = u * (1 - v);
+  return [
+    a * p00[0] + b * p01[0] + c * p11[0] + d * p10[0],
+    a * p00[1] + b * p01[1] + c * p11[1] + d * p10[1],
+  ];
+}
+
+/**
+ * Inverse of geoToCanvasPx: turn a canvas-pixel position back into geographic
+ * coordinates. Returns null when the click landed clearly outside the map's
+ * registered area (we allow a 10% margin to be forgiving on edge taps).
+ */
+export function canvasPxToGeo(
+  x: number,
+  y: number,
+  meta: GeoPdfMeta,
+  scale: number,
+): { lat: number; lng: number } | null {
+  const xPdf = x / scale;
+  const yPdfFromTop = y / scale;
+  const [, pageH] = meta.pageSize;
+  const yPdf = pageH - yPdfFromTop;
+  const [bx1, by1, bx2, by2] = meta.bbox;
+  const u = (xPdf - bx1) / (bx2 - bx1);
+  const v = (yPdf - by1) / (by2 - by1);
+  if (u < -0.1 || u > 1.1 || v < -0.1 || v > 1.1) return null;
+  const [lat, lng] = unitSquareToGeo(u, v, meta.corners);
+  return { lat, lng };
+}
