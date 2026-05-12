@@ -1408,6 +1408,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
       alert("No plots match the selected filters.");
       return;
     }
+    const logoUrl = `${window.location.origin}/integrity-logo.png`;
 
     const byBlock = new Map<string, QualityPlot[]>();
     for (const p of filtered) {
@@ -1503,8 +1504,13 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 <html><head><meta charset="utf-8"><title>Quality Assessment Report — ${project}</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; max-width: 1100px; margin: 24px auto; padding: 0 24px; }
-  h1 { color: #14532d; font-size: 22px; margin: 0 0 4px; }
-  .subtitle { color: #6b7280; font-size: 12px; margin-bottom: 24px; }
+  .report-header { display: flex; align-items: center; gap: 20px; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 2px solid #14532d; }
+  .report-header img { height: 64px; width: auto; }
+  .report-header .head-text { flex: 1; }
+  .report-header h1 { color: #14532d; font-size: 22px; margin: 0 0 4px; }
+  .report-header .subtitle { color: #6b7280; font-size: 12px; }
+  .report-header .company { text-align: right; font-size: 11px; color: #6b7280; line-height: 1.5; }
+  .report-header .company b { color: #14532d; font-size: 12px; }
   .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
   .kpi { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px 14px; border-radius: 8px; }
   .kpi .label { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #166534; }
@@ -1535,9 +1541,19 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 <div class="no-print" style="margin-bottom:16px;text-align:right">
   <button onclick="window.print()" style="padding:8px 16px;background:#14532d;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Print / Save as PDF</button>
 </div>
-<h1>Tree Plant Quality Assessment Report</h1>
-<div class="subtitle">
-  ${project}${qpReportBlock !== "all" ? ` &middot; Block: ${qpReportBlock}` : ""} &middot; ${dateFrom} → ${dateTo} &middot; ${filtered.length} plot${filtered.length !== 1 ? "s" : ""}
+<div class="report-header">
+  <img src="${logoUrl}" alt="Integrity Reforestation" crossorigin="anonymous" />
+  <div class="head-text">
+    <h1>Tree Plant Quality Assessment Report</h1>
+    <div class="subtitle">
+      ${project}${qpReportBlock !== "all" ? ` &middot; Block: ${qpReportBlock}` : ""} &middot; ${dateFrom} → ${dateTo} &middot; ${filtered.length} plot${filtered.length !== 1 ? "s" : ""}
+    </div>
+  </div>
+  <div class="company">
+    <b>Integrity Reforestation</b><br/>
+    Quality Assessment<br/>
+    Generated ${new Date().toISOString().slice(0, 10)}
+  </div>
 </div>
 <div class="kpi-grid">
   <div class="kpi"><div class="label">Quality %</div><div class="value">${overallQ.toFixed(1)}%</div><div class="sub">${fmt(totalGood)} good / ${fmt(totalPlanted)} planted</div></div>
@@ -1557,13 +1573,15 @@ ${blockSections}
 </div>
 </body></html>`;
 
-    const w = window.open("", "_blank");
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, "_blank");
     if (!w) {
+      URL.revokeObjectURL(url);
       alert("Popup blocked. Please allow popups for this site.");
       return;
     }
-    w.document.write(html);
-    w.document.close();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   function startEdit(entryId: string, field: NonNullable<typeof editingCell>["field"], value: string, lineIdx?: number) {
