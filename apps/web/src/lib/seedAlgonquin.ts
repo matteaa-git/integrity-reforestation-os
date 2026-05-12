@@ -204,6 +204,15 @@ export async function seedAlgonquinProject(
   const existingBlocks = await getProjectBlocks(PROJECT_ID);
   for (const b of existingBlocks) await deleteProjectBlock(b.id);
 
+  // Look up map file IDs from the saved project. Files were stored with
+  // name === block name (see fileMetas push above), so we can rebuild the
+  // filename→id map even on re-runs where the in-memory map is gone.
+  const refreshedProject = (await getAllProjects()).find(p => p.id === PROJECT_ID);
+  const filesByName = new Map<string, string>();
+  for (const f of refreshedProject?.files ?? []) {
+    filesByName.set(f.name, f.id);
+  }
+
   for (const blk of BLOCKS) {
     const block: ProjectBlock = {
       id:          uid("alg-b"),
@@ -211,6 +220,7 @@ export async function seedAlgonquinProject(
       blockName:   blk.name,
       area:        blk.area,
       density:     blk.density,
+      mapFileId:   filesByName.get(blk.name),
       allocations: blk.species.map(s => ({ id: uid("alg-a"), species: s.code, trees: s.trees })),
     };
     await saveProjectBlock(block);
