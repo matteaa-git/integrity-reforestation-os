@@ -2089,7 +2089,7 @@ ${blockSections}
       {/* Tab bar */}
       <div className="flex items-center border-b border-border px-6 bg-surface shrink-0 overflow-x-auto no-scrollbar">
         {(["entry", "supervisor", "daily", "reconcile", "quality", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
-          .filter(t => userRole === "crew_boss" ? t === "entry" : true)
+          .filter(t => userRole === "crew_boss" ? (t === "entry" || t === "supervisor" || t === "quality") : true)
           .map(t => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-5 py-3 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
