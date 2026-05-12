@@ -204,27 +204,55 @@ export async function seedAlgonquinProject(
   const existingBlocks = await getProjectBlocks(PROJECT_ID);
   for (const b of existingBlocks) await deleteProjectBlock(b.id);
 
-  // Look up map file IDs from the saved project. Files were stored with
-  // name === block name (see fileMetas push above), so we can rebuild the
-  // filename→id map even on re-runs where the in-memory map is gone.
+  // Look up map file IDs from the saved project. The first seed stores files
+  // with name === block name (see fileMetas push above), but be defensive and
+  // try a few key variants in case older data used the .pdf filename instead.
   const refreshedProject = (await getAllProjects()).find(p => p.id === PROJECT_ID);
-  const filesByName = new Map<string, string>();
-  for (const f of refreshedProject?.files ?? []) {
-    filesByName.set(f.name, f.id);
+  const projectFiles = refreshedProject?.files ?? [];
+  const filesByKey = new Map<string, string>();
+  for (const f of projectFiles) {
+    const variants = [
+      f.name,
+      f.name.toLowerCase(),
+      f.name.replace(/\.[^.]+$/, ""),
+      f.name.replace(/\.[^.]+$/, "").toLowerCase(),
+    ];
+    for (const v of variants) filesByKey.set(v, f.id);
   }
 
+  function resolveMapFile(blk: BlockDef): string | undefined {
+    const candidates = [
+      blk.name,
+      blk.name.toLowerCase(),
+      blk.mapFile ?? "",
+      (blk.mapFile ?? "").toLowerCase(),
+      (blk.mapFile ?? "").replace(/\.[^.]+$/, ""),
+      (blk.mapFile ?? "").replace(/\.[^.]+$/, "").toLowerCase(),
+    ];
+    for (const c of candidates) {
+      if (c && filesByKey.has(c)) return filesByKey.get(c);
+    }
+    return undefined;
+  }
+
+  let linkedCount = 0;
   for (const blk of BLOCKS) {
+    const mapFileId = resolveMapFile(blk);
+    if (mapFileId) linkedCount++;
+    else if (blk.mapFile) console.warn(`[seedAlgonquin] no file matched block "${blk.name}" (expected mapFile: ${blk.mapFile})`);
+
     const block: ProjectBlock = {
       id:          uid("alg-b"),
       projectId:   PROJECT_ID,
       blockName:   blk.name,
       area:        blk.area,
       density:     blk.density,
-      mapFileId:   filesByName.get(blk.name),
+      mapFileId,
       allocations: blk.species.map(s => ({ id: uid("alg-a"), species: s.code, trees: s.trees })),
     };
     await saveProjectBlock(block);
   }
+  console.log(`[seedAlgonquin] linked ${linkedCount}/${BLOCKS.filter(b => b.mapFile).length} blocks to map files (project had ${projectFiles.length} files)`);
 
   // ── Always refresh BlockTarget records ─────────────────────────────────────
 
