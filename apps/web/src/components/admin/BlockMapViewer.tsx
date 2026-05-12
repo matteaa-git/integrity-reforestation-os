@@ -79,6 +79,7 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
   const [dropMode, setDropMode]   = useState(false);
   const [popover, setPopover]     = useState<PopoverState | null>(null);
   const [savingPin, setSavingPin] = useState(false);
+  const [listOpen, setListOpen]   = useState(false);
   const noteInputRef              = useRef<HTMLTextAreaElement | null>(null);
 
   // Load existing pins + quality plots for this block on mount.
@@ -197,6 +198,57 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
     window.dispatchEvent(new CustomEvent("prefill-quality-plot", { detail: draft }));
     setPopover(null);
     onClose();
+  }
+
+  function editQualityPlot(plot: QualityPlotLite) {
+    const draft = { editQualityPlotId: plot.id };
+    try {
+      sessionStorage.setItem("pending_quality_plot", JSON.stringify(draft));
+    } catch { /* ignore */ }
+    window.dispatchEvent(new CustomEvent("admin-nav", { detail: { section: "production" } }));
+    window.dispatchEvent(new CustomEvent("prefill-quality-plot", { detail: draft }));
+    onClose();
+  }
+
+  // Centre the map on a canvas-pixel position. Disables auto-follow so the
+  // user's choice sticks until they re-enable Follow.
+  const panToCanvasPx = useCallback((canvasX: number, canvasY: number) => {
+    const vp = viewportRef.current?.getBoundingClientRect();
+    if (!vp) return;
+    setAutoFollow(false);
+    setTx(vp.width  / 2 - canvasX * zoom);
+    setTy(vp.height / 2 - canvasY * zoom);
+  }, [zoom]);
+
+  function focusOnPin(pin: MapPin) {
+    if (!meta) return;
+    const px = geoToCanvasPx(pin.lat, pin.lng, meta, RENDER_SCALE);
+    if (!px) return;
+    panToCanvasPx(px.x, px.y);
+    // Open the edit popover at the centre of the viewport (where the pin now sits).
+    const vp = viewportRef.current?.getBoundingClientRect();
+    if (vp) {
+      setPopover({
+        mode: "existing",
+        pinId: pin.id,
+        lat: pin.lat,
+        lng: pin.lng,
+        screenX: vp.width  / 2,
+        screenY: vp.height / 2,
+        note: pin.note,
+      });
+    }
+    setListOpen(false);
+  }
+
+  function focusOnQualityPlot(p: QualityPlotLite) {
+    if (!meta || !p.gpsLat || !p.gpsLng) return;
+    const lat = parseFloat(p.gpsLat);
+    const lng = parseFloat(p.gpsLng);
+    const px = geoToCanvasPx(lat, lng, meta, RENDER_SCALE);
+    if (!px) return;
+    panToCanvasPx(px.x, px.y);
+    setListOpen(false);
   }
 
   // ── Load PDF + parse geo + render to canvas ────────────────────────────
@@ -470,6 +522,18 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
             {dropMode ? "Tap map…" : "+ Pin"}
           </button>
           <button
+            onClick={() => setListOpen(v => !v)}
+            className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+              listOpen
+                ? "border-primary/50 text-primary bg-primary/10"
+                : "border-border text-text-secondary hover:text-text-primary"
+            }`}
+            disabled={!hasGeo || loading}
+            title="Show all pins and quality plots on this block"
+          >
+            List ({pins.length + qPlots.length})
+          </button>
+          <button
             onClick={() => { setAutoFollow(v => !v); }}
             className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
               autoFollow
@@ -639,6 +703,105 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
         {!loading && hasGeo && posError && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[11px] px-3 py-1.5 rounded-lg shadow-lg">
             {posError}
+          </div>
+        )}
+
+        {/* Pins / Quality Plots side panel */}
+        {listOpen && (
+          <div
+            className="absolute right-0 top-0 bottom-0 w-80 bg-surface border-l border-border shadow-2xl z-30 flex flex-col"
+            onMouseDown={e => e.stopPropagation()}
+            onTouchStart={e => e.stopPropagation()}
+            onWheel={e => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-border flex items-center justify-between shrink-0">
+              <div>
+                <div className="text-xs font-semibold text-text-primary">Pins & Plots</div>
+                <div className="text-[10px] text-text-tertiary mt-0.5">{blockName}</div>
+              </div>
+              <button
+                onClick={() => setListOpen(false)}
+                className="w-6 h-6 flex items-center justify-center rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-secondary transition-colors text-base leading-none"
+              >×</button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {/* Notes pins */}
+              <div className="px-4 py-2 bg-surface-secondary/30 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary border-b border-border/40">
+                Notes ({pins.length})
+              </div>
+              {pins.length === 0 ? (
+                <div className="px-4 py-4 text-[11px] text-text-tertiary italic">
+                  No pins yet. Tap “+ Pin” then tap the map to add one.
+                </div>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {pins.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(pin => (
+                    <button
+                      key={pin.id}
+                      onClick={() => focusOnPin(pin)}
+                      className="w-full text-left px-4 py-2.5 hover:bg-surface-secondary/40 transition-colors flex items-start gap-2.5"
+                    >
+                      <svg viewBox="0 0 20 22" width="16" height="18" className="shrink-0 mt-0.5">
+                        <path d="M10 0 C4.477 0 0 4.477 0 10 C0 17 10 22 10 22 C10 22 20 17 20 10 C20 4.477 15.523 0 10 0 Z" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+                        <circle cx="10" cy="9" r="3" fill="#ffffff" />
+                      </svg>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] text-text-primary truncate">
+                          {pin.note || <span className="italic text-text-tertiary">(no note)</span>}
+                        </div>
+                        <div className="text-[10px] text-text-tertiary mt-0.5 tabular-nums">
+                          {pin.lat.toFixed(5)}, {pin.lng.toFixed(5)} · {new Date(pin.createdAt).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Quality plots */}
+              <div className="px-4 py-2 mt-2 bg-surface-secondary/30 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary border-y border-border/40">
+                Quality Plots ({qPlots.length})
+              </div>
+              {qPlots.length === 0 ? (
+                <div className="px-4 py-4 text-[11px] text-text-tertiary italic">
+                  No quality plots with GPS for this block yet. Drop a pin and tap “Create Quality Plot here”.
+                </div>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {qPlots.slice().sort((a, b) => b.date.localeCompare(a.date)).map(p => {
+                    const q = p.treesPlanted > 0 ? (p.goodTrees / p.treesPlanted) * 100 : 0;
+                    const color = q >= 95 ? "#16a34a" : q >= 85 ? "#f59e0b" : "#dc2626";
+                    return (
+                      <div key={p.id} className="px-4 py-2.5 flex items-start gap-2.5">
+                        <div
+                          className="shrink-0 mt-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                          style={{ background: color, border: "1.5px solid #ffffff", boxShadow: "0 0 0 1px rgba(0,0,0,0.2)" }}
+                        >Q</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] text-text-primary truncate">
+                            Plot {p.plotNumber || "—"} · {p.goodTrees}/{p.treesPlanted} good ({q.toFixed(0)}%)
+                          </div>
+                          <div className="text-[10px] text-text-tertiary mt-0.5">
+                            {p.date}{p.crewBoss ? ` · ${p.crewBoss}` : ""}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <button
+                              onClick={() => focusOnQualityPlot(p)}
+                              className="text-[10px] font-medium px-2 py-0.5 rounded border border-border text-text-secondary hover:text-text-primary hover:border-primary/40 transition-colors"
+                            >Show on map</button>
+                            <button
+                              onClick={() => editQualityPlot(p)}
+                              className="text-[10px] font-medium px-2 py-0.5 rounded border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                            >Edit</button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

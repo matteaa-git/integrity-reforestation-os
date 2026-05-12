@@ -529,18 +529,28 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     });
   }, []);
 
-  // Cross-component handoff from the block map viewer: when the user clicks
-  // "Create Quality Plot here" on a pin, we land here pre-filled with the
-  // block name and GPS coords. The viewer drops sessionStorage AND fires an
-  // event — the event covers the case where this component is already mounted
-  // (Daily Production was the previous section), the sessionStorage check
-  // covers the case where we mount fresh after a section switch.
+  // Cross-component handoff from the block map viewer. Two draft shapes:
+  //   • Create:  { block, lat, lng }                  → switch to Quality tab + prefill
+  //   • Edit:    { editQualityPlotId: string }        → switch to Quality tab + load plot
+  // The viewer drops sessionStorage AND fires an event — the event covers the
+  // case where Daily Production is already mounted, the sessionStorage check
+  // covers a fresh mount after a section switch. Edits use pendingEditId so
+  // we can wait until qualityPlots has loaded before applying.
+  const [pendingEditId, setPendingEditId] = useState<string | null>(null);
   useEffect(() => {
-    function applyPrefill(draft: { block: string; lat: number; lng: number }) {
+    type Draft =
+      | { block: string; lat: number; lng: number }
+      | { editQualityPlotId: string };
+
+    function applyPrefill(draft: Draft) {
       setTab("quality");
-      setQpBlock(draft.block);
-      setQpGpsLat(String(draft.lat));
-      setQpGpsLng(String(draft.lng));
+      if ("editQualityPlotId" in draft) {
+        setPendingEditId(draft.editQualityPlotId);
+      } else {
+        setQpBlock(draft.block);
+        setQpGpsLat(String(draft.lat));
+        setQpGpsLng(String(draft.lng));
+      }
       try { sessionStorage.removeItem("pending_quality_plot"); } catch { /* ignore */ }
       if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -549,18 +559,35 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const raw = sessionStorage.getItem("pending_quality_plot");
       if (raw) {
         const draft = JSON.parse(raw);
-        if (draft && typeof draft.lat === "number" && typeof draft.lng === "number" && typeof draft.block === "string") {
+        if (draft && typeof draft.editQualityPlotId === "string") {
+          applyPrefill(draft);
+        } else if (
+          draft && typeof draft.lat === "number"
+          && typeof draft.lng === "number"
+          && typeof draft.block === "string"
+        ) {
           applyPrefill(draft);
         }
       }
     } catch { /* ignore */ }
     function onEvt(e: Event) {
-      const ev = e as CustomEvent<{ block: string; lat: number; lng: number }>;
+      const ev = e as CustomEvent<Draft>;
       if (ev.detail) applyPrefill(ev.detail);
     }
     window.addEventListener("prefill-quality-plot", onEvt);
     return () => window.removeEventListener("prefill-quality-plot", onEvt);
   }, []);
+  // When the requested plot id is set, load it as soon as qualityPlots is
+  // populated. Defers to the existing editQualityPlot helper which knows how
+  // to populate every form field.
+  useEffect(() => {
+    if (!pendingEditId) return;
+    const plot = qualityPlots.find(p => p.id === pendingEditId);
+    if (plot) {
+      editQualityPlot(plot);
+      setPendingEditId(null);
+    }
+  }, [pendingEditId, qualityPlots]);
 
   useEffect(() => {
     if (!openExport) return;
