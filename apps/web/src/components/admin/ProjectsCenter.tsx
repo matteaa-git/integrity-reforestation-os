@@ -158,7 +158,8 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
 
   // Preview / delete
   const [previewFile, setPreviewFile] = useState<ProjectFileResolved | null>(null);
-  const [mapViewer, setMapViewer]     = useState<{ file: ProjectFileResolved; blockName: string } | null>(null);
+  const [mapViewer, setMapViewer]     = useState<{ file: ProjectFileResolved; blockName: string; projectId: string } | null>(null);
+  const [pendingMapOpen, setPendingMapOpen] = useState<{ projectId: string; blockName: string; fileId: string } | null>(null);
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [deleteFileTarget, setDeleteFileTarget] = useState<{ projectId: string; fileId: string } | null>(null);
 
@@ -332,6 +333,37 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
   }, [selectedId, projects]);
 
   useEffect(() => { reloadTargets(); }, [reloadTargets]);
+
+  // Cross-component handoff: when Daily Production fires "open-block-map"
+  // (via the "Return to map" button after a quality plot is saved), bring
+  // the user back to the same block's map. We may need to wait for the
+  // project list to load, so stash the request in pendingMapOpen and let
+  // the effect below complete the open once everything is available.
+  useEffect(() => {
+    function onOpen(e: Event) {
+      const ev = e as CustomEvent<{ projectId: string; blockName: string; fileId: string }>;
+      if (!ev.detail) return;
+      setPendingMapOpen(ev.detail);
+    }
+    window.addEventListener("open-block-map", onOpen);
+    return () => window.removeEventListener("open-block-map", onOpen);
+  }, []);
+
+  useEffect(() => {
+    if (!pendingMapOpen) return;
+    const project = projects.find(p => p.id === pendingMapOpen.projectId);
+    if (!project) return; // wait until projects load
+    const file = project.files.find(f => f.id === pendingMapOpen.fileId);
+    if (!file?.url) {
+      setPendingMapOpen(null); // file is gone — nothing to open
+      return;
+    }
+    setSelectedId(pendingMapOpen.projectId);
+    setProjectTab("blocks");
+    setViewMode("blocks");
+    setMapViewer({ file, blockName: pendingMapOpen.blockName, projectId: pendingMapOpen.projectId });
+    setPendingMapOpen(null);
+  }, [pendingMapOpen, projects]);
 
   // ── Project CRUD ──────────────────────────────────────────────────────
 
@@ -1523,7 +1555,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                                     if (!mapFile?.url) return null;
                                     return (
                                       <button
-                                        onClick={() => setMapViewer({ file: mapFile, blockName: b.blockName })}
+                                        onClick={() => setMapViewer({ file: mapFile, blockName: b.blockName, projectId: selectedProject.id })}
                                         className="text-[11px] font-medium border rounded-lg px-2.5 py-1.5 transition-colors flex items-center gap-1.5"
                                         style={{ borderColor: "rgba(57,222,139,0.3)", color: "var(--color-primary)", background: "rgba(57,222,139,0.06)" }}
                                         title="View map with live GPS"
@@ -2263,6 +2295,8 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
           url={mapViewer.file.url}
           name={mapViewer.file.name}
           blockName={mapViewer.blockName}
+          projectId={mapViewer.projectId}
+          fileId={mapViewer.file.id}
           onClose={() => setMapViewer(null)}
         />
       )}

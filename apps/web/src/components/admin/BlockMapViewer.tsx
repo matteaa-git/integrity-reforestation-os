@@ -8,6 +8,10 @@ interface Props {
   url: string;
   name: string;
   blockName: string;
+  /** Project that owns the block — needed so the Quality form can offer "Return to map". */
+  projectId: string;
+  /** File id inside the project — used together with projectId to reopen this exact map. */
+  fileId: string;
   onClose: () => void;
 }
 
@@ -55,7 +59,7 @@ interface PopoverState {
 const RENDER_SCALE = 2; // canvas px per PDF point — high enough to look sharp when zoomed in
 const DRAG_THRESHOLD = 5; // px — below this, a mouseup counts as a tap, not a pan
 
-export default function BlockMapViewer({ url, name, blockName, onClose }: Props) {
+export default function BlockMapViewer({ url, name, blockName, projectId, fileId, onClose }: Props) {
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
   const viewportRef  = useRef<HTMLDivElement | null>(null);
 
@@ -182,6 +186,12 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
     }
   }
 
+  function writeReturnContext() {
+    try {
+      sessionStorage.setItem("return_to_map", JSON.stringify({ projectId, blockName, fileId }));
+    } catch { /* ignore */ }
+  }
+
   function createQualityPlotHere() {
     if (!popover) return;
     const draft = {
@@ -192,6 +202,7 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
     try {
       sessionStorage.setItem("pending_quality_plot", JSON.stringify(draft));
     } catch { /* ignore */ }
+    writeReturnContext();
     // Navigate the admin shell to the Production section, then ask the
     // Daily Production component to switch to its Quality tab and prefill.
     window.dispatchEvent(new CustomEvent("admin-nav", { detail: { section: "production" } }));
@@ -205,6 +216,7 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
     try {
       sessionStorage.setItem("pending_quality_plot", JSON.stringify(draft));
     } catch { /* ignore */ }
+    writeReturnContext();
     window.dispatchEvent(new CustomEvent("admin-nav", { detail: { section: "production" } }));
     window.dispatchEvent(new CustomEvent("prefill-quality-plot", { detail: draft }));
     onClose();

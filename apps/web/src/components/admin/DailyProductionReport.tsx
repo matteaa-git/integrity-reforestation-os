@@ -537,6 +537,26 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   // covers a fresh mount after a section switch. Edits use pendingEditId so
   // we can wait until qualityPlots has loaded before applying.
   const [pendingEditId, setPendingEditId] = useState<string | null>(null);
+  const [returnToMap, setReturnToMap]     = useState<{ projectId: string; blockName: string; fileId: string } | null>(null);
+  // Read return-to-map context the moment we mount, regardless of section path.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("return_to_map");
+      if (raw) {
+        const ctx = JSON.parse(raw);
+        if (ctx && typeof ctx.projectId === "string" && typeof ctx.blockName === "string" && typeof ctx.fileId === "string") {
+          setReturnToMap(ctx);
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+  function handleReturnToMap() {
+    if (!returnToMap) return;
+    try { sessionStorage.removeItem("return_to_map"); } catch { /* ignore */ }
+    window.dispatchEvent(new CustomEvent("admin-nav", { detail: { section: "projects" } }));
+    window.dispatchEvent(new CustomEvent("open-block-map", { detail: returnToMap }));
+    setReturnToMap(null);
+  }
   useEffect(() => {
     type Draft =
       | { block: string; lat: number; lng: number }
@@ -4731,6 +4751,21 @@ ${blockSections}
 
           return (
             <div className="max-w-6xl mx-auto space-y-5">
+
+              {/* Return-to-map pill, visible when the user arrived here from a block map. */}
+              {returnToMap && (
+                <div className="flex items-center justify-between gap-3 bg-emerald-500/8 border border-emerald-500/30 rounded-xl px-4 py-2.5">
+                  <div className="text-[11px] text-text-secondary">
+                    Editing a quality plot for <span className="font-semibold text-text-primary">{returnToMap.blockName}</span> from the block map.
+                  </div>
+                  <button
+                    onClick={handleReturnToMap}
+                    className="text-[11px] font-semibold px-3 py-1.5 rounded-lg border border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/15 transition-colors flex items-center gap-1.5"
+                  >
+                    <span>◎</span> Return to map
+                  </button>
+                </div>
+              )}
 
               {/* Plot Entry Form */}
               <div className="bg-surface border border-border rounded-xl p-5">
