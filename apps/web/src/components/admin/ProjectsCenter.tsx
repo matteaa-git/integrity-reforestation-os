@@ -237,10 +237,15 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
       const resolved = await Promise.all(stored.map(resolveProject));
       setProjects(resolved);
       setSelectedId("algonquin-2026");
+      // The block-load useEffect only fires when selectedId *changes*; re-import
+      // while Algonquin is already selected leaves stale (pre-reseed) blocks in
+      // React state. Re-fetch them explicitly so freshly-linked mapFileIds show.
+      const refreshedBlocks = await getProjectBlocks("algonquin-2026");
+      setBlocks(refreshedBlocks);
       if (result === "already_exists") {
         showToast("Algonquin 2026 blocks & prescriptions refreshed");
       } else {
-        showToast("Algonquin Park 2026 imported — 13 map files");
+        showToast("Algonquin Park 2026 imported — 14 map files");
       }
     } catch (err) {
       showToast(`Import failed: ${(err as Error).message}`, "error");
