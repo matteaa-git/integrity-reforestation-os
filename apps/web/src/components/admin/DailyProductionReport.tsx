@@ -168,6 +168,7 @@ interface QualityPlot {
   plantableSpots: number;
   treesPlanted: number;
   goodTrees: number;
+  prescribedDensity?: number;  // stems/ha; if set, overplants are deducted from good
   infractions: QualityInfractions;
   notes?: string;
   createdAt: string;
@@ -351,6 +352,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [qpPlantableSpots, setQpPlantableSpots] = useState<string>("");
   const [qpTreesPlanted, setQpTreesPlanted]     = useState<string>("");
   const [qpGoodTrees, setQpGoodTrees]           = useState<string>("");
+  const [qpPrescribedDensity, setQpPrescribedDensity] = useState<string>("");
   const [qpInfractions, setQpInfractions]     = useState<QualityInfractions>({ ...EMPTY_INFRACTIONS });
   const [qpNotes, setQpNotes]                 = useState("");
   const [qpEditingId, setQpEditingId]         = useState<string | null>(null);
@@ -1354,6 +1356,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
         plantableSpots: plantable,
         treesPlanted: planted,
         goodTrees: good,
+        prescribedDensity: parseFloat(qpPrescribedDensity) > 0 ? parseFloat(qpPrescribedDensity) : undefined,
         infractions: { ...qpInfractions },
         notes: qpNotes.trim() || undefined,
         createdAt: existing?.createdAt ?? new Date().toISOString(),
@@ -1386,6 +1389,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     setQpPlantableSpots(String(p.plantableSpots));
     setQpTreesPlanted(String(p.treesPlanted));
     setQpGoodTrees(String(p.goodTrees));
+    setQpPrescribedDensity(p.prescribedDensity ? String(p.prescribedDensity) : "");
     setQpInfractions({ ...EMPTY_INFRACTIONS, ...p.infractions });
     setQpNotes(p.notes ?? "");
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1410,6 +1414,21 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     }
     const logoUrl = `${window.location.origin}/integrity-logo.png`;
 
+    // Effective good = goodTrees minus overplant (only when prescribed density is set)
+    const effGoodOf = (p: QualityPlot) => {
+      if (!p.prescribedDensity || p.prescribedDensity <= 0) return p.goodTrees;
+      const spots = Math.round(p.prescribedDensity / 200);
+      const over = Math.max(0, p.treesPlanted - spots);
+      return Math.max(0, p.goodTrees - over);
+    };
+    const plantableOf = (p: QualityPlot) =>
+      (p.prescribedDensity && p.prescribedDensity > 0) ? Math.round(p.prescribedDensity / 200) : p.plantableSpots;
+    const overplantOf = (p: QualityPlot) => {
+      if (!p.prescribedDensity || p.prescribedDensity <= 0) return 0;
+      const spots = Math.round(p.prescribedDensity / 200);
+      return Math.max(0, p.treesPlanted - spots);
+    };
+
     const byBlock = new Map<string, QualityPlot[]>();
     for (const p of filtered) {
       if (!byBlock.has(p.block)) byBlock.set(p.block, []);
@@ -1418,8 +1437,9 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     const blocks = [...byBlock.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
     const totalPlanted   = filtered.reduce((s, p) => s + p.treesPlanted, 0);
-    const totalGood      = filtered.reduce((s, p) => s + p.goodTrees, 0);
-    const totalPlantable = filtered.reduce((s, p) => s + p.plantableSpots, 0);
+    const totalGood      = filtered.reduce((s, p) => s + effGoodOf(p), 0);
+    const totalPlantable = filtered.reduce((s, p) => s + plantableOf(p), 0);
+    const totalOverplant = filtered.reduce((s, p) => s + overplantOf(p), 0);
     const overallQ = totalPlanted > 0 ? (totalGood / totalPlanted) * 100 : 0;
     const overallS = totalPlantable > 0 ? (totalGood / totalPlantable) * 100 : 0;
     const avgDensity = filtered.length > 0 ? Math.round((totalGood * 200) / filtered.length) : 0;
@@ -1429,10 +1449,20 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     const dateTo   = qpReportDateTo   || dates[dates.length - 1];
     const project = [...new Set(filtered.map(p => p.project).filter(Boolean))].join(", ") || "—";
 
+    // Unique surveyors for the signature line
+    const surveyors = [...new Set(filtered.map(p => p.surveyor).filter(Boolean))];
+    const surveyorSignature = surveyors.length > 0 ? surveyors.join(", ") : "—";
+    const reportDate = new Date().toISOString().slice(0, 10);
+
+    // Filename-friendly title (used by browser "Save as PDF")
+    const dateLabel = dateFrom === dateTo ? dateFrom : `${dateFrom} to ${dateTo}`;
+    const blockLabel = qpReportBlock !== "all" ? ` — ${qpReportBlock}` : "";
+    const docTitle = `Quality Report${blockLabel} — ${dateLabel}`;
+
     const blockSummaryRows = blocks.map(([block, plots]) => {
       const tPlanted   = plots.reduce((s, p) => s + p.treesPlanted, 0);
-      const tGood      = plots.reduce((s, p) => s + p.goodTrees, 0);
-      const tPlantable = plots.reduce((s, p) => s + p.plantableSpots, 0);
+      const tGood      = plots.reduce((s, p) => s + effGoodOf(p), 0);
+      const tPlantable = plots.reduce((s, p) => s + plantableOf(p), 0);
       const q = tPlanted > 0 ? (tGood / tPlanted) * 100 : 0;
       const ss = tPlantable > 0 ? (tGood / tPlantable) * 100 : 0;
       const d = plots.length > 0 ? Math.round((tGood * 200) / plots.length) : 0;
@@ -1449,8 +1479,9 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
     const blockSections = blocks.map(([block, plots]) => {
       const tPlanted   = plots.reduce((s, p) => s + p.treesPlanted, 0);
-      const tGood      = plots.reduce((s, p) => s + p.goodTrees, 0);
-      const tPlantable = plots.reduce((s, p) => s + p.plantableSpots, 0);
+      const tGood      = plots.reduce((s, p) => s + effGoodOf(p), 0);
+      const tPlantable = plots.reduce((s, p) => s + plantableOf(p), 0);
+      const tOver      = plots.reduce((s, p) => s + overplantOf(p), 0);
       const q = tPlanted > 0 ? (tGood / tPlanted) * 100 : 0;
       const ss = tPlantable > 0 ? (tGood / tPlantable) * 100 : 0;
       const d = plots.length > 0 ? Math.round((tGood * 200) / plots.length) : 0;
@@ -1461,19 +1492,21 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
           if (v > 0) infrTotals[label] = (infrTotals[label] ?? 0) + v;
         }
       }
+      if (tOver > 0) infrTotals["Over-Plant (density)"] = tOver;
       const infrChips = Object.entries(infrTotals).sort((a, b) => b[1] - a[1])
         .map(([label, count]) => `<span class="chip">${label}: <b>${count}</b></span>`).join("");
       const plotRows = plots.slice().sort((a, b) => a.date.localeCompare(b.date) || a.plotNumber.localeCompare(b.plotNumber))
         .map(p => {
-          const pq = p.treesPlanted > 0 ? (p.goodTrees / p.treesPlanted) * 100 : 0;
-          const pd = p.goodTrees * 200;
+          const eg = effGoodOf(p);
+          const pq = p.treesPlanted > 0 ? (eg / p.treesPlanted) * 100 : 0;
+          const pd = eg * 200;
           return `<tr>
             <td>${p.date}</td>
             <td>${p.plotNumber || "—"}</td>
             <td>${p.crewBoss}</td>
             <td>${p.surveyor || "—"}</td>
             <td class="r">${fmt(p.treesPlanted)}</td>
-            <td class="r">${fmt(p.goodTrees)}</td>
+            <td class="r">${fmt(eg)}</td>
             <td class="r"><b>${pq.toFixed(1)}%</b></td>
             <td class="r">${fmt(pd)}</td>
             <td style="font-size:11px;color:#6b7280">${p.notes ?? ""}</td>
@@ -1501,7 +1534,8 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     }).join("");
 
     const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Quality Assessment Report — ${project}</title>
+<html><head><meta charset="utf-8"><title>${docTitle}</title>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap" rel="stylesheet">
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; max-width: 1100px; margin: 24px auto; padding: 0 24px; }
   .report-header { display: flex; align-items: center; gap: 20px; padding-bottom: 16px; margin-bottom: 24px; border-bottom: 2px solid #14532d; }
@@ -1528,9 +1562,10 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
   .infraction-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; }
   .chip { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; font-size: 11px; }
   .chip b { color: #14532d; }
-  .sign-block { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; display: flex; gap: 40px; }
+  .sign-block { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; display: flex; gap: 60px; }
   .sign-line { flex: 1; }
-  .sign-line .line { border-bottom: 1px solid #111827; height: 36px; }
+  .sign-line .signed { font-family: 'Dancing Script', 'Brush Script MT', cursive; font-size: 30px; color: #14532d; line-height: 1; padding-bottom: 6px; border-bottom: 1px solid #111827; min-height: 36px; }
+  .sign-line .typed { font-size: 14px; color: #111827; padding-bottom: 6px; border-bottom: 1px solid #111827; min-height: 36px; display: flex; align-items: flex-end; }
   .sign-line .label { font-size: 11px; color: #6b7280; margin-top: 4px; }
   @media print {
     body { margin: 0; padding: 0 16px; }
@@ -1567,9 +1602,8 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 </table>
 ${blockSections}
 <div class="sign-block">
-  <div class="sign-line"><div class="line"></div><div class="label">Contractor / Foreman</div></div>
-  <div class="sign-line"><div class="line"></div><div class="label">Client Representative</div></div>
-  <div class="sign-line"><div class="line"></div><div class="label">Date</div></div>
+  <div class="sign-line"><div class="signed">${surveyorSignature}</div><div class="label">Surveyor</div></div>
+  <div class="sign-line"><div class="typed">${reportDate}</div><div class="label">Date</div></div>
 </div>
 </body></html>`;
 
@@ -4518,14 +4552,27 @@ ${blockSections}
 
         {/* ─────────────────────────── QUALITY REPORTS ─────────────────────── */}
         {tab === "quality" && (() => {
+          // Effective good = goodTrees minus overplant (only when prescribed density is set)
+          const effectiveGood = (p: QualityPlot) => {
+            if (!p.prescribedDensity || p.prescribedDensity <= 0) return p.goodTrees;
+            const spots = Math.round(p.prescribedDensity / 200);
+            const over = Math.max(0, p.treesPlanted - spots);
+            return Math.max(0, p.goodTrees - over);
+          };
+
           const planted = parseInt(qpTreesPlanted) || 0;
           const good    = parseInt(qpGoodTrees)    || 0;
           const missed  = qpInfractions.missedSpot || 0;
           const computedPlantable = planted + missed;
           const plantableNum = parseInt(qpPlantableSpots) || computedPlantable;
-          const qualityPct  = planted > 0 ? (good / planted) * 100 : 0;
-          const stockingPct = plantableNum > 0 ? (good / plantableNum) * 100 : 0;
-          const density     = good * 200;
+          const prescribed = parseFloat(qpPrescribedDensity) || 0;
+          const prescribedSpots = prescribed > 0 ? Math.round(prescribed / 200) : 0;
+          const overplant = prescribed > 0 && planted > prescribedSpots ? planted - prescribedSpots : 0;
+          const effGood = Math.max(0, good - overplant);
+          const qualityPct  = planted > 0 ? (effGood / planted) * 100 : 0;
+          const stockingDenom = prescribed > 0 ? prescribedSpots : plantableNum;
+          const stockingPct = stockingDenom > 0 ? (effGood / stockingDenom) * 100 : 0;
+          const density     = effGood * 200;
 
           const logPlots = qualityPlots.filter(p =>
             (qpLogBlockFilter === "all" || p.block === qpLogBlockFilter) &&
@@ -4547,8 +4594,10 @@ ${blockSections}
             const rec = blockMap.get(p.block)!;
             rec.plots.push(p);
             rec.totalPlanted += p.treesPlanted;
-            rec.totalGood += p.goodTrees;
-            rec.totalPlantable += p.plantableSpots;
+            rec.totalGood += effectiveGood(p);
+            rec.totalPlantable += (p.prescribedDensity && p.prescribedDensity > 0)
+              ? Math.round(p.prescribedDensity / 200)
+              : p.plantableSpots;
           }
           const blockRollup = [...blockMap.values()].sort((a, b) => a.block.localeCompare(b.block));
 
@@ -4629,7 +4678,7 @@ ${blockSections}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 mb-4">
+                <div className="grid grid-cols-4 gap-3 mb-4">
                   <div>
                     <label className={labelCls}>Trees Planted in Plot *</label>
                     <input type="number" min="0" value={qpTreesPlanted}
@@ -4646,7 +4695,21 @@ ${blockSections}
                       onChange={e => setQpPlantableSpots(e.target.value)}
                       placeholder={`auto: ${computedPlantable}`} className={inputCls} />
                   </div>
+                  <div>
+                    <label className={labelCls}>Prescribed Density (stems/ha)</label>
+                    <input type="number" min="0" step="any" value={qpPrescribedDensity}
+                      onChange={e => setQpPrescribedDensity(e.target.value)}
+                      placeholder="e.g. 2000" className={inputCls} />
+                  </div>
                 </div>
+                {prescribed > 0 && (
+                  <div className="text-[10px] mb-4 -mt-2 px-3 py-2 rounded-lg border bg-amber-500/5 border-amber-500/30 text-text-secondary">
+                    Prescription: <b>{prescribedSpots}</b> trees per plot ({fmt(prescribed)} stems/ha).
+                    {overplant > 0 && (
+                      <> Over-plant: <b className="text-red-400">+{overplant}</b> tree{overplant !== 1 ? "s" : ""} — auto-deducted from Good Trees in metrics.</>
+                    )}
+                  </div>
+                )}
 
                 {/* Infractions grid */}
                 <div className="bg-surface-secondary/30 border border-border rounded-lg p-4 mb-4">
@@ -4689,11 +4752,11 @@ ${blockSections}
                     </div>
                     <div>
                       <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Density (stems/ha)</div>
-                      <div className="text-lg font-bold text-text-primary">{good > 0 ? fmt(density) : "—"}</div>
+                      <div className="text-lg font-bold text-text-primary">{effGood > 0 ? fmt(density) : "—"}</div>
                     </div>
                     <div>
                       <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Stocking %</div>
-                      <div className="text-lg font-bold text-text-primary">{plantableNum > 0 ? stockingPct.toFixed(1) + "%" : "—"}</div>
+                      <div className="text-lg font-bold text-text-primary">{stockingDenom > 0 ? stockingPct.toFixed(1) + "%" : "—"}</div>
                     </div>
                   </div>
                   <button
@@ -4815,7 +4878,8 @@ ${blockSections}
                     </div>
                     <div className="divide-y divide-border/50">
                       {logPlots.map(p => {
-                        const q = p.treesPlanted > 0 ? (p.goodTrees / p.treesPlanted) * 100 : 0;
+                        const eg = effectiveGood(p);
+                        const q = p.treesPlanted > 0 ? (eg / p.treesPlanted) * 100 : 0;
                         return (
                           <div key={p.id} className="grid grid-cols-[90px_1fr_60px_140px_80px_80px_90px_80px] gap-3 px-5 py-2 text-xs items-center group">
                             <div className="text-text-secondary">{p.date}</div>
@@ -4823,7 +4887,7 @@ ${blockSections}
                             <div className="text-right text-text-tertiary">{p.plotNumber || "—"}</div>
                             <div className="text-text-secondary truncate">{p.crewBoss}</div>
                             <div className="text-right tabular-nums text-text-secondary">{fmt(p.treesPlanted)}</div>
-                            <div className="text-right tabular-nums text-text-primary">{fmt(p.goodTrees)}</div>
+                            <div className="text-right tabular-nums text-text-primary">{fmt(eg)}</div>
                             <div className="text-right tabular-nums font-semibold" style={{ color: q >= 95 ? "var(--color-primary)" : q >= 85 ? "#fbbf24" : "#f87171" }}>
                               {q.toFixed(1)}%
                             </div>
