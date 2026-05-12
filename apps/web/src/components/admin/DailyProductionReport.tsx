@@ -1338,8 +1338,12 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     if (!qpCrewBoss.trim()) { alert("Crew boss is required."); return; }
     if (planted <= 0) { alert("Trees Planted must be greater than 0."); return; }
     if (good > planted) { alert("Good Trees cannot exceed Trees Planted."); return; }
-    const missed = qpInfractions.missedSpot || 0;
-    const plantable = parseInt(qpPlantableSpots) || (planted + missed);
+    const prescribedDen = parseFloat(qpPrescribedDensity) > 0 ? parseFloat(qpPrescribedDensity) : 0;
+    const prescribedSpots = prescribedDen > 0 ? Math.round(prescribedDen / 200) : 0;
+    const plantableDefault = prescribedSpots > 0 ? prescribedSpots : planted;
+    const plantable = parseInt(qpPlantableSpots) || plantableDefault;
+    // Missed Spot is derived: every plantable spot not covered by a tree is a missed-spot infraction.
+    const missedSpotsAuto = Math.max(0, plantable - planted);
     setQpSaving(true);
     try {
       const existing = qpEditingId ? qualityPlots.find(p => p.id === qpEditingId) : null;
@@ -1356,8 +1360,8 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
         plantableSpots: plantable,
         treesPlanted: planted,
         goodTrees: good,
-        prescribedDensity: parseFloat(qpPrescribedDensity) > 0 ? parseFloat(qpPrescribedDensity) : undefined,
-        infractions: { ...qpInfractions },
+        prescribedDensity: prescribedDen > 0 ? prescribedDen : undefined,
+        infractions: { ...qpInfractions, missedSpot: missedSpotsAuto },
         notes: qpNotes.trim() || undefined,
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       };
@@ -4608,11 +4612,13 @@ ${blockSections}
 
           const planted = parseInt(qpTreesPlanted) || 0;
           const good    = parseInt(qpGoodTrees)    || 0;
-          const missed  = qpInfractions.missedSpot || 0;
-          const computedPlantable = planted + missed;
-          const plantableNum = parseInt(qpPlantableSpots) || computedPlantable;
           const prescribed = parseFloat(qpPrescribedDensity) || 0;
           const prescribedSpots = prescribed > 0 ? Math.round(prescribed / 200) : 0;
+          // Plantable Spots defaults to prescribed count (if set) or trees planted.
+          const plantableDefault = prescribedSpots > 0 ? prescribedSpots : planted;
+          const plantableNum = parseInt(qpPlantableSpots) || plantableDefault;
+          // Missed Spot is auto-derived from plantable − planted.
+          const computedMissed = Math.max(0, plantableNum - planted);
           const overplant = prescribed > 0 && planted > prescribedSpots ? planted - prescribedSpots : 0;
           const effGood = Math.max(0, good - overplant);
           const qualityPct  = planted > 0 ? (effGood / planted) * 100 : 0;
@@ -4739,7 +4745,7 @@ ${blockSections}
                     <label className={labelCls}>Plantable Spots</label>
                     <input type="number" min="0" value={qpPlantableSpots}
                       onChange={e => setQpPlantableSpots(e.target.value)}
-                      placeholder={`auto: ${computedPlantable}`} className={inputCls} />
+                      placeholder={`default: ${plantableDefault}`} className={inputCls} />
                   </div>
                   <div>
                     <label className={labelCls}>Prescribed Density (stems/ha)</label>
@@ -4761,23 +4767,32 @@ ${blockSections}
                 <div className="bg-surface-secondary/30 border border-border rounded-lg p-4 mb-4">
                   <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary mb-3">Infractions — count of trees with this defect</div>
                   <div className="grid grid-cols-4 gap-3">
-                    {INFRACTION_LABELS.map(({ key, label, code }) => (
-                      <div key={key}>
-                        <label className="block text-[10px] text-text-secondary mb-1">
-                          <span className="font-mono text-text-tertiary mr-1">{code}.</span>{label}
-                        </label>
-                        <input
-                          type="number" min="0"
-                          value={qpInfractions[key] === 0 ? "" : qpInfractions[key]}
-                          onChange={e => setQpInfractions(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))}
-                          placeholder="0"
-                          className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50"
-                        />
-                      </div>
-                    ))}
+                    {INFRACTION_LABELS.map(({ key, label, code }) => {
+                      const isAutoMissed = key === "missedSpot";
+                      const displayValue = isAutoMissed
+                        ? (computedMissed === 0 ? "" : computedMissed)
+                        : (qpInfractions[key] === 0 ? "" : qpInfractions[key]);
+                      return (
+                        <div key={key}>
+                          <label className="block text-[10px] text-text-secondary mb-1">
+                            <span className="font-mono text-text-tertiary mr-1">{code}.</span>{label}
+                            {isAutoMissed && <span className="text-text-tertiary ml-1 italic">(auto)</span>}
+                          </label>
+                          <input
+                            type="number" min="0"
+                            value={displayValue}
+                            readOnly={isAutoMissed}
+                            onChange={isAutoMissed ? undefined : e => setQpInfractions(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))}
+                            placeholder="0"
+                            title={isAutoMissed ? "Auto-derived from Plantable Spots minus Trees Planted" : undefined}
+                            className={`w-full px-2 py-1.5 text-xs border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50 ${isAutoMissed ? "bg-surface-secondary/70 text-text-secondary cursor-not-allowed" : "bg-surface"}`}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                   <div className="text-[10px] text-text-tertiary mt-2">
-                    A tree with multiple infractions still counts as one not-good tree — set Good Trees accordingly.
+                    Missed Spot is auto-flagged when Plantable Spots is greater than Trees Planted. A tree with multiple other infractions still counts as one not-good tree — set Good Trees accordingly.
                   </div>
                 </div>
 
