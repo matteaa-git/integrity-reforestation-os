@@ -1402,7 +1402,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     if (qpEditingId === id) resetQualityForm();
   }
 
-  function generateQualityReport() {
+  async function generateQualityReport() {
     const filtered = qualityPlots.filter(p =>
       (qpReportBlock === "all" || p.block === qpReportBlock) &&
       (!qpReportDateFrom || p.date >= qpReportDateFrom) &&
@@ -1412,7 +1412,23 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
       alert("No plots match the selected filters.");
       return;
     }
-    const logoUrl = `${window.location.origin}/integrity-logo.png`;
+    // Embed the logo as a base64 data URL so it ships with the printed document
+    // (avoids the same-origin/timing issues that produced blank PDFs).
+    let logoUrl = "";
+    try {
+      const res = await fetch("/integrity-logo.png");
+      if (res.ok) {
+        const blob = await res.blob();
+        logoUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(new Error("logo read failed"));
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (err) {
+      console.warn("[quality] failed to embed logo:", err);
+    }
 
     // Effective good = goodTrees minus overplant (only when prescribed density is set)
     const effGoodOf = (p: QualityPlot) => {
@@ -1607,15 +1623,45 @@ ${blockSections}
 </div>
 </body></html>`;
 
-    const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const w = window.open(url, "_blank");
-    if (!w) {
-      URL.revokeObjectURL(url);
-      alert("Popup blocked. Please allow popups for this site.");
-      return;
-    }
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    // Print via a hidden same-origin iframe. This is the most reliable
+    // cross-browser path — popup-window printing produces blank PDFs in
+    // some browser/extension combinations.
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("aria-hidden", "true");
+    iframe.style.cssText = "position:fixed;right:-9999px;bottom:0;width:8.5in;height:11in;border:0";
+    document.body.appendChild(iframe);
+
+    // Chrome/Edge use the parent document.title as the "Save as PDF" default
+    // filename when printing from an iframe — swap it temporarily.
+    const originalTitle = document.title;
+    document.title = docTitle;
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener("afterprint", restoreTitle);
+    };
+    window.addEventListener("afterprint", restoreTitle);
+
+    iframe.onload = () => {
+      // Give web fonts (Dancing Script) a moment to settle before printing.
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (err) {
+          console.error("[quality] print failed:", err);
+          restoreTitle();
+        }
+      }, 600);
+    };
+
+    // srcdoc is the modern way to inject a full document into an iframe and
+    // triggers `onload` reliably across browsers.
+    iframe.srcdoc = html;
+
+    // Defensive cleanup well after the print dialog will have closed.
+    setTimeout(() => {
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    }, 120_000);
   }
 
   function startEdit(entryId: string, field: NonNullable<typeof editingCell>["field"], value: string, lineIdx?: number) {
