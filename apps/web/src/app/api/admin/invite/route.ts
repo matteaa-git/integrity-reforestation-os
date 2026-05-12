@@ -62,11 +62,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
 
-  // Set the role on the profile immediately (trigger creates it as crew_boss by default)
-  await supabaseAdmin
+  // Upsert the profile row. The handle_new_user trigger normally creates it as
+  // crew_boss when auth.users gets inserted, but if the trigger is missing,
+  // delayed, or fails silently the row never exists and .update() is a no-op —
+  // which is why newly invited users used to disappear from the list.
+  const { error: profileError } = await supabaseAdmin
     .from("profiles")
-    .update({ role, full_name: full_name ?? null })
-    .eq("id", data.user.id);
+    .upsert(
+      { id: data.user.id, email, role, full_name: full_name ?? null },
+      { onConflict: "id" }
+    );
+
+  if (profileError) {
+    return NextResponse.json(
+      { error: `Profile creation failed: ${profileError.message}` },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ success: true, userId: data.user.id });
 }

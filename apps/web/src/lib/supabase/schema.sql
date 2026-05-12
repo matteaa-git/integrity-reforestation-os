@@ -9,7 +9,7 @@ create table if not exists public.profiles (
   email       text not null,
   full_name   text,
   role        text not null default 'crew_boss'
-                check (role in ('admin', 'supervisor', 'crew_boss')),
+                check (role in ('admin', 'supervisor', 'crew_boss', 'planter')),
   employee_id text,
   avatar      text,
   created_at  timestamptz default now(),
