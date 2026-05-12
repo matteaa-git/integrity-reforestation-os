@@ -41,6 +41,8 @@ export default function UserManagement() {
   const [loading, setLoading]       = useState(true);
   const [toast, setToast]           = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Invite form
   const [inviteEmail, setInviteEmail]   = useState("");
@@ -55,7 +57,10 @@ export default function UserManagement() {
     setTimeout(() => setToast(null), 3500);
   }
 
-  useEffect(() => { loadProfiles(); }, []);
+  useEffect(() => {
+    loadProfiles();
+    supabase.auth.getUser().then(({ data }) => setCurrentUserId(data.user?.id ?? null));
+  }, []);
 
   async function loadProfiles() {
     setLoading(true);
@@ -89,6 +94,25 @@ export default function UserManagement() {
       await loadProfiles();
     }
     setInviting(false);
+  }
+
+  async function handleDeleteUser(profile: Profile) {
+    const label = profile.full_name ?? profile.email;
+    if (!confirm(`Delete ${label}? This permanently removes their account and login access. Production records they touched are kept.`)) return;
+    setDeletingId(profile.id);
+    const res = await fetch("/api/admin/delete-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: profile.id }),
+    });
+    const json = await res.json();
+    if (!res.ok) {
+      showToast(json.error ?? "Failed to delete user.", "error");
+    } else {
+      setProfiles(prev => prev.filter(p => p.id !== profile.id));
+      showToast(`${label} deleted.`);
+    }
+    setDeletingId(null);
   }
 
   async function handleRoleChange(userId: string, newRole: UserRole) {
@@ -287,6 +311,16 @@ export default function UserManagement() {
                   </select>
                   {updatingId === profile.id && (
                     <span className="text-[10px] text-text-tertiary animate-spin">⟳</span>
+                  )}
+                  {currentUserId !== profile.id && (
+                    <button
+                      onClick={() => handleDeleteUser(profile)}
+                      disabled={deletingId === profile.id}
+                      title="Delete user"
+                      className="text-[14px] leading-none w-7 h-7 rounded-lg border border-border text-text-tertiary hover:text-red-400 hover:border-red-400/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center"
+                    >
+                      {deletingId === profile.id ? <span className="animate-spin text-[10px]">⟳</span> : "×"}
+                    </button>
                   )}
                 </div>
               </div>
