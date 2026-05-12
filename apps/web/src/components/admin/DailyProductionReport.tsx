@@ -529,6 +529,39 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     });
   }, []);
 
+  // Cross-component handoff from the block map viewer: when the user clicks
+  // "Create Quality Plot here" on a pin, we land here pre-filled with the
+  // block name and GPS coords. The viewer drops sessionStorage AND fires an
+  // event — the event covers the case where this component is already mounted
+  // (Daily Production was the previous section), the sessionStorage check
+  // covers the case where we mount fresh after a section switch.
+  useEffect(() => {
+    function applyPrefill(draft: { block: string; lat: number; lng: number }) {
+      setTab("quality");
+      setQpBlock(draft.block);
+      setQpGpsLat(String(draft.lat));
+      setQpGpsLng(String(draft.lng));
+      try { sessionStorage.removeItem("pending_quality_plot"); } catch { /* ignore */ }
+      if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    // Mount check
+    try {
+      const raw = sessionStorage.getItem("pending_quality_plot");
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (draft && typeof draft.lat === "number" && typeof draft.lng === "number" && typeof draft.block === "string") {
+          applyPrefill(draft);
+        }
+      }
+    } catch { /* ignore */ }
+    function onEvt(e: Event) {
+      const ev = e as CustomEvent<{ block: string; lat: number; lng: number }>;
+      if (ev.detail) applyPrefill(ev.detail);
+    }
+    window.addEventListener("prefill-quality-plot", onEvt);
+    return () => window.removeEventListener("prefill-quality-plot", onEvt);
+  }, []);
+
   useEffect(() => {
     if (!openExport) return;
     function close() { setOpenExport(null); }

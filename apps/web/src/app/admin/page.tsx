@@ -117,6 +117,18 @@ export default function AdminPage() {
     if (allowed.includes(section)) setActiveSection(section);
   }
 
+  // Cross-component navigation hook (used by BlockMapViewer to hand off to
+  // Daily Production → Quality Reports). Fires when any component dispatches
+  // window.dispatchEvent(new CustomEvent("admin-nav", { detail: { section } })).
+  useEffect(() => {
+    function onNav(e: Event) {
+      const ev = e as CustomEvent<{ section?: AdminSection }>;
+      if (ev.detail?.section) handleNavigate(ev.detail.section);
+    }
+    window.addEventListener("admin-nav", onNav);
+    return () => window.removeEventListener("admin-nav", onNav);
+  }, [userRole]);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.replace("/login");

@@ -181,6 +181,24 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
     }
   }
 
+  function createQualityPlotHere() {
+    if (!popover) return;
+    const draft = {
+      block: blockName,
+      lat: Number(popover.lat.toFixed(6)),
+      lng: Number(popover.lng.toFixed(6)),
+    };
+    try {
+      sessionStorage.setItem("pending_quality_plot", JSON.stringify(draft));
+    } catch { /* ignore */ }
+    // Navigate the admin shell to the Production section, then ask the
+    // Daily Production component to switch to its Quality tab and prefill.
+    window.dispatchEvent(new CustomEvent("admin-nav", { detail: { section: "production" } }));
+    window.dispatchEvent(new CustomEvent("prefill-quality-plot", { detail: draft }));
+    setPopover(null);
+    onClose();
+  }
+
   // ── Load PDF + parse geo + render to canvas ────────────────────────────
   useEffect(() => {
     let cancelled = false;
@@ -687,11 +705,14 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
                 </button>
               </div>
             </div>
-            {/* Cross-link hint: tell user how to create a quality plot at this pin */}
-            <div className="mt-3 pt-3 border-t border-border/60 text-[10px] text-text-tertiary leading-relaxed">
-              Want a quality plot here? Open Daily Production → Quality Reports and
-              paste these coords into GPS Lat / GPS Lng.
-            </div>
+            {/* Hand off to Daily Production → Quality Reports prefilled */}
+            <button
+              onClick={createQualityPlotHere}
+              className="mt-3 w-full text-[11px] font-semibold px-3 py-2 rounded-lg border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors flex items-center justify-center gap-2"
+            >
+              <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] font-bold">Q</span>
+              Create Quality Plot here
+            </button>
           </div>
         )}
 
