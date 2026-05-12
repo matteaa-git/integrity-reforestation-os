@@ -55,28 +55,41 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
           setHasGeo(true);
         }
 
-        // Lazy-import pdf.js so it doesn't ship in the main bundle.
+        // Lazy-import pdf.js so it doesn't ship in the main bundle. The worker
+        // is self-hosted under /public so we don't depend on a CDN mirroring
+        // whatever pdfjs-dist version we're on.
         const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc =
-          `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+        console.log(`[BlockMapViewer] pdf.js ${pdfjs.version} → fetching PDF`);
 
-        const pdf  = await pdfjs.getDocument({ data: buf }).promise;
-        const page = await pdf.getPage(1);
+        const pdfDoc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
+        if (cancelled) return;
+        console.log(`[BlockMapViewer] doc loaded, pages=${pdfDoc.numPages}`);
+
+        const page = await pdfDoc.getPage(1);
+        if (cancelled) return;
         const viewport = page.getViewport({ scale: RENDER_SCALE });
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+          console.warn("[BlockMapViewer] canvas ref missing");
+          return;
+        }
         canvas.width  = Math.floor(viewport.width);
         canvas.height = Math.floor(viewport.height);
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context unavailable");
+        console.log(`[BlockMapViewer] rendering ${canvas.width}×${canvas.height}…`);
         await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+        if (cancelled) return;
+        console.log("[BlockMapViewer] render complete");
         setCanvasSize({ w: canvas.width, h: canvas.height });
 
         setLoading(false);
       } catch (err) {
-        console.error("[BlockMapViewer]", err);
+        console.error("[BlockMapViewer] load error:", err);
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load map");
+          const msg = err instanceof Error ? err.message : String(err);
+          setError(`Failed to load map: ${msg}`);
           setLoading(false);
         }
       }
