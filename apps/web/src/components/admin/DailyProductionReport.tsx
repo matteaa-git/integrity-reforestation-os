@@ -138,7 +138,61 @@ function newDraftPlanter(): DraftPlanter {
   return { id: uid(), employeeId: "", employeeName: "", hoursWorked: "9", lines: [newLine()] };
 }
 
-type Tab = "entry" | "supervisor" | "daily" | "reconcile" | "log" | "summary" | "rates" | "blocks" | "client" | "oversight" | "payroll" | "manual-changes";
+type Tab = "entry" | "supervisor" | "daily" | "reconcile" | "quality" | "log" | "summary" | "rates" | "blocks" | "client" | "oversight" | "payroll" | "manual-changes";
+
+interface QualityInfractions {
+  openHole: number;
+  tooDeep: number;
+  multiples: number;
+  droppedTrees: number;
+  leaner: number;
+  improperSpacing: number;
+  tooShallow: number;
+  tooLoose: number;
+  poorSite: number;
+  missedSpot: number;
+  jRoot: number;
+  other: number;
+}
+
+interface QualityPlot {
+  id: string;
+  date: string;
+  project: string;
+  block: string;
+  plotNumber: string;
+  surveyor: string;
+  crewBoss: string;
+  gpsLat?: string;
+  gpsLng?: string;
+  plantableSpots: number;
+  treesPlanted: number;
+  goodTrees: number;
+  infractions: QualityInfractions;
+  notes?: string;
+  createdAt: string;
+}
+
+const INFRACTION_LABELS: Array<{ key: keyof QualityInfractions; label: string; code: string }> = [
+  { key: "openHole",        label: "Open Hole",        code: "1" },
+  { key: "tooDeep",         label: "Too Deep",         code: "2" },
+  { key: "multiples",       label: "Multiples",        code: "3" },
+  { key: "droppedTrees",    label: "Dropped Trees",    code: "4" },
+  { key: "leaner",          label: "Leaner",           code: "5" },
+  { key: "improperSpacing", label: "Improper Spacing", code: "6" },
+  { key: "tooShallow",      label: "Too Shallow",      code: "7" },
+  { key: "missedSpot",      label: "Missed Spot",      code: "8" },
+  { key: "tooLoose",        label: "Too Loose",        code: "9" },
+  { key: "poorSite",        label: "Poor Site",        code: "10" },
+  { key: "jRoot",           label: "J-Root",           code: "11" },
+  { key: "other",           label: "Other",            code: "12" },
+];
+
+const EMPTY_INFRACTIONS: QualityInfractions = {
+  openHole: 0, tooDeep: 0, multiples: 0, droppedTrees: 0,
+  leaner: 0, improperSpacing: 0, tooShallow: 0, tooLoose: 0,
+  poorSite: 0, missedSpot: 0, jRoot: 0, other: 0,
+};
 
 interface SavedSession {
   id: string;
@@ -284,6 +338,29 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   // Supervisor Overview tab
   const [oversightDate, setOversightDate] = useState(todayStr());
 
+  // Quality Reports tab
+  const [qualityPlots, setQualityPlots]       = useState<QualityPlot[]>([]);
+  const [qpDate, setQpDate]                   = useState(todayStr());
+  const [qpProject, setQpProject]             = useState("");
+  const [qpBlock, setQpBlock]                 = useState("");
+  const [qpPlotNumber, setQpPlotNumber]       = useState("");
+  const [qpSurveyor, setQpSurveyor]           = useState("");
+  const [qpCrewBoss, setQpCrewBoss]           = useState("");
+  const [qpGpsLat, setQpGpsLat]               = useState("");
+  const [qpGpsLng, setQpGpsLng]               = useState("");
+  const [qpPlantableSpots, setQpPlantableSpots] = useState<string>("");
+  const [qpTreesPlanted, setQpTreesPlanted]     = useState<string>("");
+  const [qpGoodTrees, setQpGoodTrees]           = useState<string>("");
+  const [qpInfractions, setQpInfractions]     = useState<QualityInfractions>({ ...EMPTY_INFRACTIONS });
+  const [qpNotes, setQpNotes]                 = useState("");
+  const [qpEditingId, setQpEditingId]         = useState<string | null>(null);
+  const [qpSaving, setQpSaving]               = useState(false);
+  const [qpReportBlock, setQpReportBlock]     = useState<string>("all");
+  const [qpReportDateFrom, setQpReportDateFrom] = useState("");
+  const [qpReportDateTo, setQpReportDateTo]     = useState("");
+  const [qpLogBlockFilter, setQpLogBlockFilter] = useState<string>("all");
+  const [qpLogCrewFilter,  setQpLogCrewFilter]  = useState<string>("all");
+
   // Reconciliation tab
   const [reconcileTolerance, setReconcileTolerance] = useState<number>(3);
   const [reconcileProjectFilter, setReconcileProjectFilter] = useState<string>("all");
@@ -425,6 +502,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const map = new Map<string, BlockTarget>();
       for (const t of saved) map.set(t.id, t);
       setBlockTargets(map);
+    });
+    getAllRecords<QualityPlot>("quality_plots").then(saved => {
+      setQualityPlots(saved.sort((a, b) => b.date.localeCompare(a.date)));
     });
     getAllRecords<{ id: string }>("reconcile_closed_blocks").then(saved => {
       const remote = new Set(saved.map(r => r.id));
@@ -1235,6 +1315,257 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     setEntries(prev => prev.filter(e => e.id !== id));
   }
 
+  // ── Quality Reports helpers ─────────────────────────────────────────────
+  function resetQualityForm() {
+    setQpDate(todayStr());
+    setQpPlotNumber("");
+    setQpPlantableSpots("");
+    setQpTreesPlanted("");
+    setQpGoodTrees("");
+    setQpInfractions({ ...EMPTY_INFRACTIONS });
+    setQpGpsLat("");
+    setQpGpsLng("");
+    setQpNotes("");
+    setQpEditingId(null);
+  }
+
+  async function saveQualityPlot() {
+    const planted = parseInt(qpTreesPlanted) || 0;
+    const good = parseInt(qpGoodTrees) || 0;
+    if (!qpBlock.trim()) { alert("Block is required."); return; }
+    if (!qpCrewBoss.trim()) { alert("Crew boss is required."); return; }
+    if (planted <= 0) { alert("Trees Planted must be greater than 0."); return; }
+    if (good > planted) { alert("Good Trees cannot exceed Trees Planted."); return; }
+    const missed = qpInfractions.missedSpot || 0;
+    const plantable = parseInt(qpPlantableSpots) || (planted + missed);
+    setQpSaving(true);
+    try {
+      const existing = qpEditingId ? qualityPlots.find(p => p.id === qpEditingId) : null;
+      const plot: QualityPlot = {
+        id: qpEditingId ?? uid(),
+        date: qpDate,
+        project: qpProject.trim(),
+        block: qpBlock.trim(),
+        plotNumber: qpPlotNumber.trim(),
+        surveyor: qpSurveyor.trim(),
+        crewBoss: qpCrewBoss.trim(),
+        gpsLat: qpGpsLat.trim() || undefined,
+        gpsLng: qpGpsLng.trim() || undefined,
+        plantableSpots: plantable,
+        treesPlanted: planted,
+        goodTrees: good,
+        infractions: { ...qpInfractions },
+        notes: qpNotes.trim() || undefined,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+      };
+      await saveRecord("quality_plots", plot);
+      setQualityPlots(prev => {
+        const idx = prev.findIndex(p => p.id === plot.id);
+        const next = idx >= 0 ? prev.map((p, i) => i === idx ? plot : p) : [plot, ...prev];
+        return next.sort((a, b) => b.date.localeCompare(a.date));
+      });
+      resetQualityForm();
+    } catch (err) {
+      console.error("[quality] save:", err);
+      alert("Failed to save plot.");
+    } finally {
+      setQpSaving(false);
+    }
+  }
+
+  function editQualityPlot(p: QualityPlot) {
+    setQpEditingId(p.id);
+    setQpDate(p.date);
+    setQpProject(p.project);
+    setQpBlock(p.block);
+    setQpPlotNumber(p.plotNumber);
+    setQpSurveyor(p.surveyor);
+    setQpCrewBoss(p.crewBoss);
+    setQpGpsLat(p.gpsLat ?? "");
+    setQpGpsLng(p.gpsLng ?? "");
+    setQpPlantableSpots(String(p.plantableSpots));
+    setQpTreesPlanted(String(p.treesPlanted));
+    setQpGoodTrees(String(p.goodTrees));
+    setQpInfractions({ ...EMPTY_INFRACTIONS, ...p.infractions });
+    setQpNotes(p.notes ?? "");
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function deleteQualityPlot(id: string) {
+    if (!confirm("Delete this quality plot?")) return;
+    await deleteRecord("quality_plots", id);
+    setQualityPlots(prev => prev.filter(p => p.id !== id));
+    if (qpEditingId === id) resetQualityForm();
+  }
+
+  function generateQualityReport() {
+    const filtered = qualityPlots.filter(p =>
+      (qpReportBlock === "all" || p.block === qpReportBlock) &&
+      (!qpReportDateFrom || p.date >= qpReportDateFrom) &&
+      (!qpReportDateTo   || p.date <= qpReportDateTo)
+    );
+    if (filtered.length === 0) {
+      alert("No plots match the selected filters.");
+      return;
+    }
+
+    const byBlock = new Map<string, QualityPlot[]>();
+    for (const p of filtered) {
+      if (!byBlock.has(p.block)) byBlock.set(p.block, []);
+      byBlock.get(p.block)!.push(p);
+    }
+    const blocks = [...byBlock.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+    const totalPlanted   = filtered.reduce((s, p) => s + p.treesPlanted, 0);
+    const totalGood      = filtered.reduce((s, p) => s + p.goodTrees, 0);
+    const totalPlantable = filtered.reduce((s, p) => s + p.plantableSpots, 0);
+    const overallQ = totalPlanted > 0 ? (totalGood / totalPlanted) * 100 : 0;
+    const overallS = totalPlantable > 0 ? (totalGood / totalPlantable) * 100 : 0;
+    const avgDensity = filtered.length > 0 ? Math.round((totalGood * 200) / filtered.length) : 0;
+
+    const dates = filtered.map(p => p.date).sort();
+    const dateFrom = qpReportDateFrom || dates[0];
+    const dateTo   = qpReportDateTo   || dates[dates.length - 1];
+    const project = [...new Set(filtered.map(p => p.project).filter(Boolean))].join(", ") || "—";
+
+    const blockSummaryRows = blocks.map(([block, plots]) => {
+      const tPlanted   = plots.reduce((s, p) => s + p.treesPlanted, 0);
+      const tGood      = plots.reduce((s, p) => s + p.goodTrees, 0);
+      const tPlantable = plots.reduce((s, p) => s + p.plantableSpots, 0);
+      const q = tPlanted > 0 ? (tGood / tPlanted) * 100 : 0;
+      const ss = tPlantable > 0 ? (tGood / tPlantable) * 100 : 0;
+      const d = plots.length > 0 ? Math.round((tGood * 200) / plots.length) : 0;
+      return `<tr>
+        <td><b>${block}</b></td>
+        <td class="r">${plots.length}</td>
+        <td class="r">${fmt(tPlanted)}</td>
+        <td class="r">${fmt(tGood)}</td>
+        <td class="r"><b>${q.toFixed(1)}%</b></td>
+        <td class="r">${ss.toFixed(1)}%</td>
+        <td class="r">${fmt(d)}</td>
+      </tr>`;
+    }).join("");
+
+    const blockSections = blocks.map(([block, plots]) => {
+      const tPlanted   = plots.reduce((s, p) => s + p.treesPlanted, 0);
+      const tGood      = plots.reduce((s, p) => s + p.goodTrees, 0);
+      const tPlantable = plots.reduce((s, p) => s + p.plantableSpots, 0);
+      const q = tPlanted > 0 ? (tGood / tPlanted) * 100 : 0;
+      const ss = tPlantable > 0 ? (tGood / tPlantable) * 100 : 0;
+      const d = plots.length > 0 ? Math.round((tGood * 200) / plots.length) : 0;
+      const infrTotals: Record<string, number> = {};
+      for (const p of plots) {
+        for (const { key, label } of INFRACTION_LABELS) {
+          const v = p.infractions[key] ?? 0;
+          if (v > 0) infrTotals[label] = (infrTotals[label] ?? 0) + v;
+        }
+      }
+      const infrChips = Object.entries(infrTotals).sort((a, b) => b[1] - a[1])
+        .map(([label, count]) => `<span class="chip">${label}: <b>${count}</b></span>`).join("");
+      const plotRows = plots.slice().sort((a, b) => a.date.localeCompare(b.date) || a.plotNumber.localeCompare(b.plotNumber))
+        .map(p => {
+          const pq = p.treesPlanted > 0 ? (p.goodTrees / p.treesPlanted) * 100 : 0;
+          const pd = p.goodTrees * 200;
+          return `<tr>
+            <td>${p.date}</td>
+            <td>${p.plotNumber || "—"}</td>
+            <td>${p.crewBoss}</td>
+            <td>${p.surveyor || "—"}</td>
+            <td class="r">${fmt(p.treesPlanted)}</td>
+            <td class="r">${fmt(p.goodTrees)}</td>
+            <td class="r"><b>${pq.toFixed(1)}%</b></td>
+            <td class="r">${fmt(pd)}</td>
+            <td style="font-size:11px;color:#6b7280">${p.notes ?? ""}</td>
+          </tr>`;
+        }).join("");
+      return `
+        <div class="block-section">
+          <div class="block-header">
+            <div class="title">${block}</div>
+            <div class="stats">${plots.length} plot${plots.length !== 1 ? "s" : ""} &middot; ${fmt(tGood)}/${fmt(tPlanted)} good (${q.toFixed(1)}%) &middot; Density ${fmt(d)} stems/ha &middot; Stocking ${ss.toFixed(1)}%</div>
+          </div>
+          ${infrChips ? `<div class="infraction-chips">${infrChips}</div>` : ""}
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Plot #</th><th>Crew Boss</th><th>Surveyor</th>
+                <th class="r">Planted</th><th class="r">Good</th>
+                <th class="r">Quality %</th><th class="r">Density (s/ha)</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>${plotRows}</tbody>
+          </table>
+        </div>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Quality Assessment Report — ${project}</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111827; max-width: 1100px; margin: 24px auto; padding: 0 24px; }
+  h1 { color: #14532d; font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: #6b7280; font-size: 12px; margin-bottom: 24px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .kpi { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 12px 14px; border-radius: 8px; }
+  .kpi .label { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: #166534; }
+  .kpi .value { font-size: 22px; font-weight: 800; color: #14532d; margin-top: 4px; }
+  .kpi .sub { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+  thead th { background: #14532d; color: #ffffff; padding: 8px 10px; text-align: left; font-weight: 700; font-size: 11px; letter-spacing: .04em; }
+  thead th.r { text-align: right; }
+  tbody td { padding: 7px 10px; border-bottom: 1px solid #f3f4f6; }
+  tbody td.r { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:nth-child(even) { background: #fafafa; }
+  .block-header { background: #f0fdf4; padding: 10px 14px; margin-top: 28px; margin-bottom: 0; border-left: 4px solid #14532d; }
+  .block-header .title { font-size: 14px; font-weight: 800; color: #14532d; }
+  .block-header .stats { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .infraction-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 16px; }
+  .chip { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 999px; padding: 3px 10px; font-size: 11px; }
+  .chip b { color: #14532d; }
+  .sign-block { margin-top: 48px; padding-top: 16px; border-top: 1px solid #e5e7eb; display: flex; gap: 40px; }
+  .sign-line { flex: 1; }
+  .sign-line .line { border-bottom: 1px solid #111827; height: 36px; }
+  .sign-line .label { font-size: 11px; color: #6b7280; margin-top: 4px; }
+  @media print {
+    body { margin: 0; padding: 0 16px; }
+    .block-section { page-break-inside: avoid; }
+    .no-print { display: none; }
+  }
+</style></head><body>
+<div class="no-print" style="margin-bottom:16px;text-align:right">
+  <button onclick="window.print()" style="padding:8px 16px;background:#14532d;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Print / Save as PDF</button>
+</div>
+<h1>Tree Plant Quality Assessment Report</h1>
+<div class="subtitle">
+  ${project}${qpReportBlock !== "all" ? ` &middot; Block: ${qpReportBlock}` : ""} &middot; ${dateFrom} → ${dateTo} &middot; ${filtered.length} plot${filtered.length !== 1 ? "s" : ""}
+</div>
+<div class="kpi-grid">
+  <div class="kpi"><div class="label">Quality %</div><div class="value">${overallQ.toFixed(1)}%</div><div class="sub">${fmt(totalGood)} good / ${fmt(totalPlanted)} planted</div></div>
+  <div class="kpi"><div class="label">Stocking %</div><div class="value">${overallS.toFixed(1)}%</div><div class="sub">${fmt(totalGood)} good / ${fmt(totalPlantable)} plantable</div></div>
+  <div class="kpi"><div class="label">Avg Density</div><div class="value">${fmt(avgDensity)}</div><div class="sub">stems/ha (good × 200)</div></div>
+  <div class="kpi"><div class="label">Plots Surveyed</div><div class="value">${filtered.length}</div><div class="sub">across ${byBlock.size} block${byBlock.size !== 1 ? "s" : ""}</div></div>
+</div>
+<table>
+  <thead><tr><th>Block</th><th class="r">Plots</th><th class="r">Planted</th><th class="r">Good</th><th class="r">Quality %</th><th class="r">Stocking %</th><th class="r">Density (s/ha)</th></tr></thead>
+  <tbody>${blockSummaryRows}</tbody>
+</table>
+${blockSections}
+<div class="sign-block">
+  <div class="sign-line"><div class="line"></div><div class="label">Contractor / Foreman</div></div>
+  <div class="sign-line"><div class="line"></div><div class="label">Client Representative</div></div>
+  <div class="sign-line"><div class="line"></div><div class="label">Date</div></div>
+</div>
+</body></html>`;
+
+    const w = window.open("", "_blank");
+    if (!w) {
+      alert("Popup blocked. Please allow popups for this site.");
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+  }
+
   function startEdit(entryId: string, field: NonNullable<typeof editingCell>["field"], value: string, lineIdx?: number) {
     setEditingCell({ entryId, field, lineIdx });
     setEditingValue(value);
@@ -1655,7 +1986,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 
       {/* Tab bar */}
       <div className="flex items-center border-b border-border px-6 bg-surface shrink-0 overflow-x-auto no-scrollbar">
-        {(["entry", "supervisor", "daily", "reconcile", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
+        {(["entry", "supervisor", "daily", "reconcile", "quality", "log", "summary", "rates", "blocks", "client", "oversight", "payroll", "manual-changes"] as Tab[])
           .filter(t => userRole === "crew_boss" ? t === "entry" : true)
           .map(t => (
           <button key={t} onClick={() => setTab(t)}
@@ -1663,7 +1994,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
               tab === t ? "border-primary text-primary" : "border-transparent text-text-secondary hover:text-text-primary"
             }`}
           >
-            {t === "entry" ? "Crew Boss Entry" : t === "supervisor" ? "Tree Deliveries" : t === "daily" ? "Inventory Tracking" : t === "reconcile" ? "Reconciliation" : t === "log" ? "Production Reports" : t === "summary" ? "Earnings & Deductions" : t === "rates" ? "Species Rates" : t === "blocks" ? "Block Summary" : t === "client" ? "Client Summary" : t === "payroll" ? "Payroll" : t === "manual-changes" ? "Manual Changes" : "Supervisor Overview"}
+            {t === "entry" ? "Crew Boss Entry" : t === "supervisor" ? "Tree Deliveries" : t === "daily" ? "Inventory Tracking" : t === "reconcile" ? "Reconciliation" : t === "quality" ? "Quality Reports" : t === "log" ? "Production Reports" : t === "summary" ? "Earnings & Deductions" : t === "rates" ? "Species Rates" : t === "blocks" ? "Block Summary" : t === "client" ? "Client Summary" : t === "payroll" ? "Payroll" : t === "manual-changes" ? "Manual Changes" : "Supervisor Overview"}
           </button>
         ))}
       </div>
@@ -4155,6 +4486,332 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
                             </div>
                             <div className={`text-right tabular-nums ${flagged ? (pct > 0 ? "text-red-400 font-bold" : "text-amber-400 font-bold") : "text-text-secondary"}`}>
                               {pct >= 0 ? "+" : ""}{pct.toFixed(1)}%
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ─────────────────────────── QUALITY REPORTS ─────────────────────── */}
+        {tab === "quality" && (() => {
+          const planted = parseInt(qpTreesPlanted) || 0;
+          const good    = parseInt(qpGoodTrees)    || 0;
+          const missed  = qpInfractions.missedSpot || 0;
+          const computedPlantable = planted + missed;
+          const plantableNum = parseInt(qpPlantableSpots) || computedPlantable;
+          const qualityPct  = planted > 0 ? (good / planted) * 100 : 0;
+          const stockingPct = plantableNum > 0 ? (good / plantableNum) * 100 : 0;
+          const density     = good * 200;
+
+          const logPlots = qualityPlots.filter(p =>
+            (qpLogBlockFilter === "all" || p.block === qpLogBlockFilter) &&
+            (qpLogCrewFilter  === "all" || p.crewBoss === qpLogCrewFilter)
+          );
+
+          interface BlockRollup {
+            block: string;
+            plots: QualityPlot[];
+            totalPlanted: number;
+            totalGood: number;
+            totalPlantable: number;
+          }
+          const blockMap = new Map<string, BlockRollup>();
+          for (const p of qualityPlots) {
+            if (!blockMap.has(p.block)) blockMap.set(p.block, {
+              block: p.block, plots: [], totalPlanted: 0, totalGood: 0, totalPlantable: 0,
+            });
+            const rec = blockMap.get(p.block)!;
+            rec.plots.push(p);
+            rec.totalPlanted += p.treesPlanted;
+            rec.totalGood += p.goodTrees;
+            rec.totalPlantable += p.plantableSpots;
+          }
+          const blockRollup = [...blockMap.values()].sort((a, b) => a.block.localeCompare(b.block));
+
+          const knownProjects = [...new Set([
+            ...qualityPlots.map(p => p.project),
+            ...entries.map(e => e.project),
+            ...deliveries.map(d => d.project),
+          ].filter(Boolean))].sort();
+          const knownBlocks = [...new Set([
+            ...qualityPlots.map(p => p.block),
+            ...entries.map(e => e.block),
+            ...deliveries.map(d => d.block),
+          ].filter(Boolean))].sort();
+          const knownSurveyors = [...new Set(qualityPlots.map(p => p.surveyor).filter(Boolean))].sort();
+          const knownCrews = [...new Set([
+            ...qualityPlots.map(p => p.crewBoss),
+            ...entries.map(e => e.crewBoss),
+          ].filter(Boolean))].sort();
+
+          return (
+            <div className="max-w-6xl mx-auto space-y-5">
+
+              {/* Plot Entry Form */}
+              <div className="bg-surface border border-border rounded-xl p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">
+                      {qpEditingId ? "Edit Quality Plot" : "New Quality Plot"}
+                    </div>
+                    <div className="text-[10px] text-text-tertiary mt-0.5">3.99 m radius plot · area = 50 m² (1/200 ha) · density = good × 200 stems/ha</div>
+                  </div>
+                  {qpEditingId && (
+                    <button onClick={resetQualityForm} className="text-[10px] text-text-tertiary hover:text-text-primary underline">
+                      Cancel edit
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label className={labelCls}>Date *</label>
+                    <input type="date" value={qpDate} onChange={e => setQpDate(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Project</label>
+                    <input list="qp-projects" value={qpProject} onChange={e => setQpProject(e.target.value)} placeholder="Project…" className={inputCls} />
+                    <datalist id="qp-projects">{knownProjects.map(p => <option key={p} value={p} />)}</datalist>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Block *</label>
+                    <input list="qp-blocks" value={qpBlock} onChange={e => setQpBlock(e.target.value)} placeholder="e.g. Block 3A" className={inputCls} />
+                    <datalist id="qp-blocks">{knownBlocks.map(b => <option key={b} value={b} />)}</datalist>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Plot #</label>
+                    <input value={qpPlotNumber} onChange={e => setQpPlotNumber(e.target.value)} placeholder="e.g. P1" className={inputCls} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-3 mb-3">
+                  <div>
+                    <label className={labelCls}>Surveyor</label>
+                    <input list="qp-surveyors" value={qpSurveyor} onChange={e => setQpSurveyor(e.target.value)} placeholder="Name…" className={inputCls} />
+                    <datalist id="qp-surveyors">{knownSurveyors.map(s => <option key={s} value={s} />)}</datalist>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Crew Boss *</label>
+                    <input list="qp-crews" value={qpCrewBoss} onChange={e => setQpCrewBoss(e.target.value)} placeholder="Name…" className={inputCls} />
+                    <datalist id="qp-crews">{knownCrews.map(c => <option key={c} value={c} />)}</datalist>
+                  </div>
+                  <div>
+                    <label className={labelCls}>GPS Lat</label>
+                    <input value={qpGpsLat} onChange={e => setQpGpsLat(e.target.value)} placeholder="optional" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>GPS Lng</label>
+                    <input value={qpGpsLng} onChange={e => setQpGpsLng(e.target.value)} placeholder="optional" className={inputCls} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div>
+                    <label className={labelCls}>Trees Planted in Plot *</label>
+                    <input type="number" min="0" value={qpTreesPlanted}
+                      onChange={e => setQpTreesPlanted(e.target.value)} placeholder="0" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Good Trees</label>
+                    <input type="number" min="0" value={qpGoodTrees}
+                      onChange={e => setQpGoodTrees(e.target.value)} placeholder="0" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Plantable Spots</label>
+                    <input type="number" min="0" value={qpPlantableSpots}
+                      onChange={e => setQpPlantableSpots(e.target.value)}
+                      placeholder={`auto: ${computedPlantable}`} className={inputCls} />
+                  </div>
+                </div>
+
+                {/* Infractions grid */}
+                <div className="bg-surface-secondary/30 border border-border rounded-lg p-4 mb-4">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary mb-3">Infractions — count of trees with this defect</div>
+                  <div className="grid grid-cols-4 gap-3">
+                    {INFRACTION_LABELS.map(({ key, label, code }) => (
+                      <div key={key}>
+                        <label className="block text-[10px] text-text-secondary mb-1">
+                          <span className="font-mono text-text-tertiary mr-1">{code}.</span>{label}
+                        </label>
+                        <input
+                          type="number" min="0"
+                          value={qpInfractions[key] === 0 ? "" : qpInfractions[key]}
+                          onChange={e => setQpInfractions(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))}
+                          placeholder="0"
+                          className="w-full px-2 py-1.5 text-xs bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary/50"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="text-[10px] text-text-tertiary mt-2">
+                    A tree with multiple infractions still counts as one not-good tree — set Good Trees accordingly.
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <label className={labelCls}>Notes</label>
+                  <textarea value={qpNotes} onChange={e => setQpNotes(e.target.value)} rows={2}
+                    placeholder="Optional comments…" className={inputCls} />
+                </div>
+
+                {/* Live metrics + save */}
+                <div className="flex items-center justify-between gap-4 bg-surface-secondary/30 border border-border rounded-lg px-4 py-3">
+                  <div className="grid grid-cols-3 gap-4 flex-1">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Quality %</div>
+                      <div className="text-lg font-bold" style={{ color: planted === 0 ? "var(--color-text-tertiary)" : qualityPct >= 95 ? "var(--color-primary)" : qualityPct >= 85 ? "#fbbf24" : "#f87171" }}>
+                        {planted > 0 ? qualityPct.toFixed(1) + "%" : "—"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Density (stems/ha)</div>
+                      <div className="text-lg font-bold text-text-primary">{good > 0 ? fmt(density) : "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Stocking %</div>
+                      <div className="text-lg font-bold text-text-primary">{plantableNum > 0 ? stockingPct.toFixed(1) + "%" : "—"}</div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={saveQualityPlot}
+                    disabled={qpSaving || !qpBlock.trim() || !qpCrewBoss.trim() || planted <= 0}
+                    className="px-5 py-2 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    style={{ background: "var(--color-primary)", color: "#fff" }}
+                  >
+                    {qpSaving ? "Saving…" : qpEditingId ? "Update Plot" : "Save Plot"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Block Rollup */}
+              <div className="bg-surface border border-border rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-border bg-surface-secondary/40 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Block Quality Rollup</div>
+                    <div className="text-[10px] text-text-tertiary mt-0.5">Weighted across all plots in each block.</div>
+                  </div>
+                  <div className="text-xs font-semibold text-text-primary">{blockRollup.length} block{blockRollup.length !== 1 ? "s" : ""}</div>
+                </div>
+                {blockRollup.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-xs text-text-tertiary">No quality plots saved yet.</div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[1fr_70px_90px_90px_110px_90px_100px] gap-3 px-5 py-2 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary bg-surface-secondary/20 border-b border-border/50">
+                      <div>Block</div>
+                      <div className="text-right">Plots</div>
+                      <div className="text-right">Planted</div>
+                      <div className="text-right">Good</div>
+                      <div className="text-right">Avg Density</div>
+                      <div className="text-right">Quality %</div>
+                      <div className="text-right">Stocking %</div>
+                    </div>
+                    <div className="divide-y divide-border/50">
+                      {blockRollup.map(b => {
+                        const q = b.totalPlanted > 0 ? (b.totalGood / b.totalPlanted) * 100 : 0;
+                        const ss = b.totalPlantable > 0 ? (b.totalGood / b.totalPlantable) * 100 : 0;
+                        const d = b.plots.length > 0 ? Math.round((b.totalGood * 200) / b.plots.length) : 0;
+                        return (
+                          <div key={b.block} className="grid grid-cols-[1fr_70px_90px_90px_110px_90px_100px] gap-3 px-5 py-2.5 text-xs items-center">
+                            <div className="font-medium text-text-primary truncate">{b.block}</div>
+                            <div className="text-right tabular-nums text-text-secondary">{b.plots.length}</div>
+                            <div className="text-right tabular-nums text-text-secondary">{fmt(b.totalPlanted)}</div>
+                            <div className="text-right tabular-nums text-text-primary font-semibold">{fmt(b.totalGood)}</div>
+                            <div className="text-right tabular-nums text-text-secondary">{fmt(d)}</div>
+                            <div className="text-right tabular-nums font-semibold" style={{ color: q >= 95 ? "var(--color-primary)" : q >= 85 ? "#fbbf24" : "#f87171" }}>
+                              {q.toFixed(1)}%
+                            </div>
+                            <div className="text-right tabular-nums text-text-secondary">{ss.toFixed(1)}%</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Generate Report */}
+              <div className="bg-surface border border-border rounded-xl p-5">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary mb-3">Generate Client Report</div>
+                <div className="grid grid-cols-4 gap-3 items-end">
+                  <div>
+                    <label className={labelCls}>Block</label>
+                    <select value={qpReportBlock} onChange={e => setQpReportBlock(e.target.value)} className={inputCls}>
+                      <option value="all">All Blocks</option>
+                      {[...new Set(qualityPlots.map(p => p.block))].sort().map(b => <option key={b} value={b}>{b}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelCls}>From</label>
+                    <input type="date" value={qpReportDateFrom} onChange={e => setQpReportDateFrom(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>To</label>
+                    <input type="date" value={qpReportDateTo} onChange={e => setQpReportDateTo(e.target.value)} className={inputCls} />
+                  </div>
+                  <button
+                    onClick={generateQualityReport}
+                    disabled={qualityPlots.length === 0}
+                    className="px-4 py-2 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{ background: "var(--color-primary)", color: "#fff" }}
+                  >
+                    Generate Report
+                  </button>
+                </div>
+              </div>
+
+              {/* Plots Log */}
+              <div className="bg-surface border border-border rounded-xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-border bg-surface-secondary/40 flex items-center gap-3 flex-wrap">
+                  <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary mr-2">Plot Log</div>
+                  <select value={qpLogBlockFilter} onChange={e => setQpLogBlockFilter(e.target.value)}
+                    className="text-xs border border-border rounded-lg px-2 py-1 bg-surface text-text-primary focus:outline-none focus:border-primary/50">
+                    <option value="all">All Blocks</option>
+                    {[...new Set(qualityPlots.map(p => p.block))].sort().map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                  <select value={qpLogCrewFilter} onChange={e => setQpLogCrewFilter(e.target.value)}
+                    className="text-xs border border-border rounded-lg px-2 py-1 bg-surface text-text-primary focus:outline-none focus:border-primary/50">
+                    <option value="all">All Crews</option>
+                    {[...new Set(qualityPlots.map(p => p.crewBoss))].sort().map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <div className="ml-auto text-xs text-text-tertiary">{logPlots.length} plot{logPlots.length !== 1 ? "s" : ""}</div>
+                </div>
+                {logPlots.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-xs text-text-tertiary">No plots match the filters.</div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-[90px_1fr_60px_140px_80px_80px_90px_80px] gap-3 px-5 py-2 text-[10px] uppercase tracking-widest font-semibold text-text-tertiary bg-surface-secondary/20 border-b border-border/50">
+                      <div>Date</div>
+                      <div>Block</div>
+                      <div className="text-right">Plot</div>
+                      <div>Crew</div>
+                      <div className="text-right">Planted</div>
+                      <div className="text-right">Good</div>
+                      <div className="text-right">Quality</div>
+                      <div></div>
+                    </div>
+                    <div className="divide-y divide-border/50">
+                      {logPlots.map(p => {
+                        const q = p.treesPlanted > 0 ? (p.goodTrees / p.treesPlanted) * 100 : 0;
+                        return (
+                          <div key={p.id} className="grid grid-cols-[90px_1fr_60px_140px_80px_80px_90px_80px] gap-3 px-5 py-2 text-xs items-center group">
+                            <div className="text-text-secondary">{p.date}</div>
+                            <div className="text-text-primary truncate">{p.block}</div>
+                            <div className="text-right text-text-tertiary">{p.plotNumber || "—"}</div>
+                            <div className="text-text-secondary truncate">{p.crewBoss}</div>
+                            <div className="text-right tabular-nums text-text-secondary">{fmt(p.treesPlanted)}</div>
+                            <div className="text-right tabular-nums text-text-primary">{fmt(p.goodTrees)}</div>
+                            <div className="text-right tabular-nums font-semibold" style={{ color: q >= 95 ? "var(--color-primary)" : q >= 85 ? "#fbbf24" : "#f87171" }}>
+                              {q.toFixed(1)}%
+                            </div>
+                            <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => editQualityPlot(p)} className="text-[10px] text-text-tertiary hover:text-text-primary underline">edit</button>
+                              <button onClick={() => deleteQualityPlot(p.id)} className="text-[10px] text-text-tertiary hover:text-red-400">×</button>
                             </div>
                           </div>
                         );
