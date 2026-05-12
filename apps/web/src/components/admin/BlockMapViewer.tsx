@@ -200,12 +200,13 @@ export default function BlockMapViewer({ url, name, blockName, onClose }: Props)
           setHasGeo(true);
         }
 
-        // Lazy-import pdf.js so it doesn't ship in the main bundle. The worker
-        // is self-hosted under /public so we don't depend on a CDN mirroring
-        // whatever pdfjs-dist version we're on.
-        const pdfjs = await import("pdfjs-dist");
+        // Lazy-import pdf.js (legacy build — transpiles away modern Map/Set
+        // primitives like getOrInsertComputed that crash older Safari/Chrome).
+        // Worker is self-hosted under /public so we don't depend on a CDN
+        // mirroring whatever pdfjs-dist version we're on.
+        const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
         pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        console.log(`[BlockMapViewer] pdf.js ${pdfjs.version} → fetching PDF`);
+        console.log(`[BlockMapViewer] pdf.js ${pdfjs.version} (legacy) → fetching PDF`);
 
         const pdfDoc = await pdfjs.getDocument({ data: new Uint8Array(buf) }).promise;
         if (cancelled) return;
