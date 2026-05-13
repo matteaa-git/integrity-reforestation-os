@@ -690,8 +690,8 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* ── Left: Project List ── */}
-      <div className="w-60 bg-surface border-r border-border flex flex-col shrink-0">
+      {/* ── Left: Project List ── (full-width on mobile, fixed 240 px from md up) */}
+      <div className={`${selectedProject ? "hidden md:flex" : "flex"} w-full md:w-60 bg-surface border-r border-border flex-col shrink-0`}>
         <div className="p-3 border-b border-border space-y-2">
           {isAdmin && (
             <>
@@ -784,8 +784,8 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
         </div>
       </div>
 
-      {/* ── Right: Project Detail ── */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      {/* ── Right: Project Detail ── (hidden on mobile until a project is selected) */}
+      <div className={`${selectedProject ? "flex" : "hidden md:flex"} flex-1 flex-col min-w-0 overflow-hidden`}>
         {!selectedProject ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -807,7 +807,14 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
         ) : (
           <>
             {/* Project header */}
-            <div className="bg-surface border-b border-border px-6 py-4 shrink-0">
+            <div className="bg-surface border-b border-border px-4 sm:px-6 py-3 sm:py-4 shrink-0">
+              {/* Mobile: back to project list */}
+              <button
+                onClick={() => setSelectedId(null)}
+                className="md:hidden mb-2 inline-flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-text-primary"
+              >
+                <span>←</span> Projects
+              </button>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2.5 flex-wrap">
@@ -843,10 +850,10 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
             </div>
 
             {/* Project-level tabs */}
-            <div className="flex items-center border-b border-border bg-surface shrink-0 px-6">
+            <div className="flex items-center border-b border-border bg-surface shrink-0 px-4 sm:px-6 overflow-x-auto">
               {(["files", "nursery", "blocks"] as const).filter(t => isAdmin || t === "files" || t === "blocks").map(t => (
                 <button key={t} onClick={() => setProjectTab(t)}
-                  className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  className={`shrink-0 px-3 sm:px-4 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap ${
                     projectTab === t ? "border-primary text-primary" : "border-transparent text-text-secondary hover:text-text-primary"
                   }`}
                 >
@@ -862,7 +869,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
             </div>
 
             {/* Toolbar — files tab only */}
-            {projectTab === "files" && <div className="bg-surface border-b border-border px-6 py-3 flex items-center gap-3 flex-wrap shrink-0">
+            {projectTab === "files" && <div className="bg-surface border-b border-border px-4 sm:px-6 py-3 flex items-center gap-3 flex-wrap shrink-0">
               {/* Category filter pills */}
               <div className="flex items-center gap-1 flex-wrap flex-1 min-w-0">
                 <button
@@ -950,7 +957,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
               const totalTrees = nurseryLoads.reduce((s, l) =>
                 s + l.species.reduce((ss, sp) => ss + sp.treesPerBox * sp.numberOfBoxes, 0), 0);
               return (
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-6">
                   <div className="max-w-4xl mx-auto space-y-4">
 
                     {/* Header */}
@@ -1172,7 +1179,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
               }
 
               return (
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-6">
                   <div className="max-w-5xl mx-auto space-y-5">
 
                     {/* Header */}
@@ -1480,7 +1487,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
               const unmappedMaps = mapFiles.filter(f => !linkedIds.has(f.id));
               const totalAllocated = blocks.reduce((s, b) => s + b.allocations.reduce((ss, a) => ss + a.trees, 0), 0);
               return (
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-6">
                   <div className="max-w-4xl mx-auto space-y-4">
                     {/* Header */}
                     <div className="flex items-center justify-between">
@@ -1606,7 +1613,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`flex-1 overflow-y-auto p-6 transition-all ${isDragging ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""}`}
+              className={`flex-1 overflow-y-auto p-3 sm:p-6 transition-all ${isDragging ? "bg-primary/5 ring-2 ring-inset ring-primary/30" : ""}`}
             >
               {isDragging && (
                 <div className="fixed inset-0 bg-primary/10 flex items-center justify-center z-10 pointer-events-none">
