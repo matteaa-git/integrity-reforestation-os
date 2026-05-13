@@ -94,6 +94,11 @@ export default function MobileAdminPage() {
     if (section !== "employees") setSelectedEmployee(null);
   }
 
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
   function renderContent() {
     if (activeSection === "employees" && selectedEmployee) {
       return (
@@ -159,7 +164,12 @@ export default function MobileAdminPage() {
   }
 
   return (
-    <MobileAdminShell activeSection={activeSection} onNavigate={handleNavigate} userRole={userRole}>
+    <MobileAdminShell
+      activeSection={activeSection}
+      onNavigate={handleNavigate}
+      userRole={userRole}
+      onSignOut={handleSignOut}
+    >
       {renderContent()}
     </MobileAdminShell>
   );

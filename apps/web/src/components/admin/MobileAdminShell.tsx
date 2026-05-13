@@ -95,10 +95,11 @@ interface Props {
   activeSection: AdminSection;
   onNavigate: (section: AdminSection) => void;
   userRole?: UserRole;
+  onSignOut?: () => void;
   children: React.ReactNode;
 }
 
-export default function MobileAdminShell({ activeSection, onNavigate, userRole = "admin", children }: Props) {
+export default function MobileAdminShell({ activeSection, onNavigate, userRole = "admin", onSignOut, children }: Props) {
   const [showMore, setShowMore] = useState(false);
 
   const allowed = ROLE_PERMISSIONS[userRole] ?? ROLE_PERMISSIONS["crew_boss"];
@@ -164,6 +165,28 @@ export default function MobileAdminShell({ activeSection, onNavigate, userRole =
         >
           <span style={{ fontSize: 13 }}>⇱</span> Desktop
         </a>
+
+        {/* Sign out — always visible so every role (incl. crew boss with no
+            "More" items showing this) can leave the app on mobile. */}
+        {onSignOut && (
+          <button
+            onClick={() => {
+              if (confirm("Sign out?")) onSignOut();
+            }}
+            title="Sign out"
+            aria-label="Sign out"
+            style={{
+              fontSize: 11, color: "rgba(255,255,255,0.45)",
+              padding: "5px 9px", borderRadius: 7,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "none", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
+              WebkitTapHighlightColor: "transparent",
+            }}
+          >
+            <span style={{ fontSize: 13 }}>⏻</span>
+          </button>
+        )}
       </div>
 
       {/* ── Content ──────────────────────────────────────────────────────── */}
@@ -362,6 +385,26 @@ export default function MobileAdminShell({ activeSection, onNavigate, userRole =
                 <span style={{ fontSize: 16 }}>⇱</span>
                 Switch to Desktop View
               </a>
+              {onSignOut && (
+                <button
+                  onClick={() => {
+                    if (confirm("Sign out?")) onSignOut();
+                  }}
+                  style={{
+                    width: "100%", marginTop: 10,
+                    display: "flex", alignItems: "center", gap: 10,
+                    fontSize: 13, color: "var(--color-text-secondary)",
+                    padding: "10px 14px", borderRadius: 10,
+                    background: "var(--color-surface-secondary)",
+                    border: "1px solid var(--color-border)",
+                    cursor: "pointer", textAlign: "left",
+                    WebkitTapHighlightColor: "transparent",
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>⏻</span>
+                  Sign Out
+                </button>
+              )}
             </div>
           </div>
         </>
