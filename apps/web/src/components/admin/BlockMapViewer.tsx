@@ -506,18 +506,18 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col" role="dialog" aria-modal="true">
       {/* Header */}
-      <div className="bg-surface border-b border-border px-5 py-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5 min-w-0">
+      <div className="bg-surface border-b border-border px-3 sm:px-5 py-2 sm:py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400 shrink-0">MAP</span>
           <span className="text-xs font-semibold text-text-primary truncate">{blockName}</span>
-          <span className="text-[10px] text-text-tertiary truncate hidden sm:inline">{name}</span>
+          <span className="text-[10px] text-text-tertiary truncate hidden lg:inline">{name}</span>
           {hasGeo && (
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 shrink-0 uppercase tracking-wider">Georef</span>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {pos && (
-            <span className="text-[10px] text-text-tertiary tabular-nums hidden md:inline">
+            <span className="text-[10px] text-text-tertiary tabular-nums hidden xl:inline">
               {pos.lat.toFixed(5)}, {pos.lng.toFixed(5)} · ±{pos.accuracy.toFixed(0)} m
             </span>
           )}
