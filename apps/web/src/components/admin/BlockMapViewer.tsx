@@ -511,77 +511,77 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col" role="dialog" aria-modal="true">
-      {/* Header */}
-      <div className="bg-surface border-b border-border px-3 sm:px-5 py-2 sm:py-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+      {/* Header — explicit two-row layout so action buttons are always reachable
+          on tablets/phones regardless of how the viewport flex math shakes out. */}
+      <div className="bg-surface border-b border-border px-3 sm:px-5 py-2 sm:py-3 space-y-2">
+        {/* Row 1: title + close. Close is always visible in the top-right. */}
+        <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400 shrink-0">MAP</span>
           <span className="text-xs font-semibold text-text-primary truncate">{blockName}</span>
           <span className="text-[10px] text-text-tertiary truncate hidden lg:inline">{name}</span>
           {hasGeo && (
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 shrink-0 uppercase tracking-wider">Georef</span>
           )}
-        </div>
-        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
           {pos && (
-            <span className="text-[10px] text-text-tertiary tabular-nums hidden xl:inline">
+            <span className="text-[10px] text-text-tertiary tabular-nums ml-auto truncate hidden md:inline pr-2">
               {pos.lat.toFixed(5)}, {pos.lng.toFixed(5)} · ±{pos.accuracy.toFixed(0)} m
             </span>
           )}
           <button
+            onClick={onClose}
+            className={`w-7 h-7 flex items-center justify-center rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-secondary transition-colors text-lg leading-none shrink-0 ${pos ? "" : "ml-auto"}`}
+            aria-label="Close map"
+          >×</button>
+        </div>
+        {/* Row 2: action buttons. flex-wrap so they stack on truly narrow widths. */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+          <button
             onClick={() => { setDropMode(v => !v); if (!dropMode) setAutoFollow(false); }}
-            className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+            className={`text-[11px] font-medium px-3 py-1.5 rounded-lg border transition-colors ${
               dropMode
                 ? "border-amber-400/60 text-amber-400 bg-amber-400/10"
                 : "border-border text-text-secondary hover:text-text-primary"
             }`}
-            title={dropMode ? "Tap the map to drop a pin (or click to cancel)" : "Drop a pin"}
             disabled={!hasGeo || loading}
           >
             {dropMode ? "Tap map…" : "+ Pin"}
           </button>
           <button
             onClick={() => setListOpen(v => !v)}
-            className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+            className={`text-[11px] font-medium px-3 py-1.5 rounded-lg border transition-colors ${
               listOpen
                 ? "border-primary/50 text-primary bg-primary/10"
                 : "border-border text-text-secondary hover:text-text-primary"
             }`}
             disabled={!hasGeo || loading}
-            title="Show all pins and quality plots on this block"
           >
             List ({pins.length + qPlots.length})
           </button>
           <button
             onClick={() => { setAutoFollow(v => !v); }}
-            className={`text-[10px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${
+            className={`text-[11px] font-medium px-3 py-1.5 rounded-lg border transition-colors ${
               autoFollow
                 ? "border-primary/50 text-primary bg-primary/10"
                 : "border-border text-text-secondary hover:text-text-primary"
-            }`}
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
             disabled={!dot}
-            title={dot ? "" : "Waiting for location"}
           >
             {autoFollow ? "Following" : "Follow"}
           </button>
           <button
             onClick={fitToScreen}
-            className="text-[10px] font-medium px-2.5 py-1 rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors"
+            className="text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors"
           >
             Fit
           </button>
           <a
             href={url}
             download={name}
-            className="text-[10px] font-medium px-2.5 py-1 rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors"
+            className="text-[11px] font-medium px-3 py-1.5 rounded-lg border border-border text-text-secondary hover:text-text-primary transition-colors"
+            title="Download PDF"
           >
-            ↓
+            ↓ PDF
           </a>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-secondary transition-colors text-lg leading-none"
-          >
-            ×
-          </button>
         </div>
       </div>
 
