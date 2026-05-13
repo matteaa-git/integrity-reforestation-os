@@ -844,7 +844,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
 
             {/* Project-level tabs */}
             <div className="flex items-center border-b border-border bg-surface shrink-0 px-6">
-              {(["files", "nursery", "blocks"] as const).filter(t => isAdmin || t === "files").map(t => (
+              {(["files", "nursery", "blocks"] as const).filter(t => isAdmin || t === "files" || t === "blocks").map(t => (
                 <button key={t} onClick={() => setProjectTab(t)}
                   className={`px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
                     projectTab === t ? "border-primary text-primary" : "border-transparent text-text-secondary hover:text-text-primary"
@@ -1490,17 +1490,19 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                           {blocks.length} block{blocks.length !== 1 ? "s" : ""} · {totalAllocated.toLocaleString()} trees allocated
                         </div>
                       </div>
-                      <button
-                        onClick={() => openNewBlock()}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-90 transition-all"
-                        style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
-                      >
-                        + Add Block
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => openNewBlock()}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-90 transition-all"
+                          style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                        >
+                          + Add Block
+                        </button>
+                      )}
                     </div>
 
-                    {/* Auto-suggest from unlinked maps */}
-                    {unmappedMaps.length > 0 && (
+                    {/* Auto-suggest from unlinked maps (admin/supervisor only) */}
+                    {isAdmin && unmappedMaps.length > 0 && (
                       <div className="bg-surface border border-border rounded-xl p-4">
                         <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary mb-3">Maps without blocks</div>
                         <div className="flex flex-wrap gap-2">
@@ -1522,8 +1524,10 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                       <div className="border-2 border-dashed border-border rounded-xl p-16 text-center">
                         <div className="text-3xl opacity-15 mb-2">⬡</div>
                         <div className="text-sm font-semibold text-text-secondary">No blocks yet</div>
-                        <div className="text-xs text-text-tertiary mt-1">Upload maps first, then add tree allocation data per block</div>
-                        <button onClick={() => openNewBlock()} className="mt-4 text-xs font-medium px-4 py-2 rounded-lg border border-border text-text-secondary hover:bg-surface-secondary transition-colors">+ Add Block</button>
+                        <div className="text-xs text-text-tertiary mt-1">{isAdmin ? "Upload maps first, then add tree allocation data per block" : "Ask an admin to set up blocks for this project."}</div>
+                        {isAdmin && (
+                          <button onClick={() => openNewBlock()} className="mt-4 text-xs font-medium px-4 py-2 rounded-lg border border-border text-text-secondary hover:bg-surface-secondary transition-colors">+ Add Block</button>
+                        )}
                       </div>
                     ) : (
                       <div className="space-y-3">
@@ -1564,8 +1568,12 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                                       </button>
                                     );
                                   })()}
-                                  <button onClick={() => openEditBlock(b)} className="text-[11px] text-text-tertiary hover:text-text-primary border border-border rounded-lg px-2.5 py-1.5 transition-colors">Edit</button>
-                                  <button onClick={() => removeBlock(b.id)} className="text-[11px] text-danger hover:bg-red-50 border border-border rounded-lg px-2.5 py-1.5 transition-colors">×</button>
+                                  {isAdmin && (
+                                    <>
+                                      <button onClick={() => openEditBlock(b)} className="text-[11px] text-text-tertiary hover:text-text-primary border border-border rounded-lg px-2.5 py-1.5 transition-colors">Edit</button>
+                                      <button onClick={() => removeBlock(b.id)} className="text-[11px] text-danger hover:bg-red-50 border border-border rounded-lg px-2.5 py-1.5 transition-colors">×</button>
+                                    </>
+                                  )}
                                 </div>
                               </div>
                               {/* Species chips */}
