@@ -94,6 +94,21 @@ export default function MobileAdminPage() {
     if (section !== "employees") setSelectedEmployee(null);
   }
 
+  // Cross-component navigation hook (e.g. BlockMapViewer's
+  // "Create Quality Plot here" handoff). Mirrors the same listener on the
+  // desktop admin page so the mobile shell also responds to admin-nav events.
+  useEffect(() => {
+    function onNav(e: Event) {
+      const ev = e as CustomEvent<{ section?: AdminSection }>;
+      const target = ev.detail?.section;
+      if (!target) return;
+      const allowed = ROLE_PERMISSIONS[userRole] ?? ROLE_PERMISSIONS["crew_boss"];
+      if (allowed.includes(target)) handleNavigate(target);
+    }
+    window.addEventListener("admin-nav", onNav);
+    return () => window.removeEventListener("admin-nav", onNav);
+  }, [userRole]);
+
   async function handleSignOut() {
     await supabase.auth.signOut();
     router.replace("/login");
