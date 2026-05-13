@@ -277,7 +277,8 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
         const buf = await res.arrayBuffer();
         if (cancelled) return;
 
-        const parsed = parseGeoPdf(buf);
+        const parsed = await parseGeoPdf(buf);
+        if (cancelled) return;
         if (parsed) {
           setMeta(parsed);
           setHasGeo(true);

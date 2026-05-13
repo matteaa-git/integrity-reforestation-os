@@ -31,14 +31,11 @@ function parseNumberList(s: string): number[] {
   return s.trim().split(/\s+/).map(Number).filter(n => Number.isFinite(n));
 }
 
-export function parseGeoPdf(bytes: ArrayBuffer): GeoPdfMeta | null {
-  const text = new TextDecoder("latin1").decode(bytes);
-
-  // Find the first viewport. ArcGIS-exported PDFs have one /VP per page.
-  const vpStart = text.indexOf("/VP[");
+/** Parse /VP /BBox /GPTS /LPTS out of an already-extracted text region. */
+function parseFromText(haystack: string, pageSize: [number, number]): GeoPdfMeta | null {
+  const vpStart = haystack.indexOf("/VP[");
   if (vpStart < 0) return null;
-  // Cap the search window to keep regex bounded.
-  const vpChunk = text.substring(vpStart, vpStart + 16_384);
+  const vpChunk = haystack.substring(vpStart, vpStart + 16_384);
 
   const bboxMatch = vpChunk.match(/\/BBox\s*\[\s*([-\d.\s]+?)\s*\]/);
   const gptsMatch = vpChunk.match(/\/GPTS\s*\[\s*([-\d.\s]+?)\s*\]/);
@@ -50,23 +47,74 @@ export function parseGeoPdf(bytes: ArrayBuffer): GeoPdfMeta | null {
   const lpts = parseNumberList(lptsMatch[1]);
   if (bboxNums.length !== 4 || gpts.length !== 8 || lpts.length !== 8) return null;
 
-  // MediaBox lives further up in the page dictionary; search the whole text.
-  // Fall back to the standard US Letter at 72dpi if missing.
-  const mediaMatch = text.match(/\/MediaBox\s*\[\s*([-\d.\s]+?)\s*\]/);
-  const mediaNums = mediaMatch ? parseNumberList(mediaMatch[1]) : [0, 0, 612, 792];
-  const pageSize: [number, number] = [
-    mediaNums[2] - mediaNums[0],
-    mediaNums[3] - mediaNums[1],
-  ];
-
   const corners: [GeoPdfCorner, GeoPdfCorner, GeoPdfCorner, GeoPdfCorner] = [
     { lpt: [lpts[0], lpts[1]], geo: [gpts[0], gpts[1]] },
     { lpt: [lpts[2], lpts[3]], geo: [gpts[2], gpts[3]] },
     { lpt: [lpts[4], lpts[5]], geo: [gpts[4], gpts[5]] },
     { lpt: [lpts[6], lpts[7]], geo: [gpts[6], gpts[7]] },
   ];
-
   return { bbox: bboxNums as [number, number, number, number], pageSize, corners };
+}
+
+/** Decode a deflate stream via the browser's native DecompressionStream API. */
+async function inflate(input: Uint8Array): Promise<Uint8Array | null> {
+  if (typeof DecompressionStream === "undefined") return null;
+  try {
+    const stream = new Response(new Blob([input as BlobPart])).body!
+      .pipeThrough(new DecompressionStream("deflate"));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Parse OGC GeoPDF metadata. First scans the raw PDF as text; if /VP isn't
+ * directly visible (because the page dict was packed into a compressed Object
+ * Stream — PDF 1.5+ feature ArcGIS uses for newer maps like "Km 78 79.pdf"),
+ * falls back to inflating every FlateDecode stream and searching those.
+ */
+export async function parseGeoPdf(bytes: ArrayBuffer): Promise<GeoPdfMeta | null> {
+  const fullText = new TextDecoder("latin1").decode(bytes);
+
+  // MediaBox is always uncompressed (top-level page dict reference).
+  const mediaMatch = fullText.match(/\/MediaBox\s*\[\s*([-\d.\s]+?)\s*\]/);
+  const mediaNums = mediaMatch ? parseNumberList(mediaMatch[1]) : [0, 0, 612, 792];
+  const pageSize: [number, number] = [
+    mediaNums[2] - mediaNums[0],
+    mediaNums[3] - mediaNums[1],
+  ];
+
+  // Fast path: VP is in plain text (most ArcGIS exports we've seen).
+  const direct = parseFromText(fullText, pageSize);
+  if (direct) return direct;
+
+  // Slow path: walk every stream...endstream block, try to inflate it, and
+  // search the decompressed contents for /VP. This catches PDFs whose page
+  // dictionaries are stored inside a /Type/ObjStm compressed object.
+  const raw = new Uint8Array(bytes);
+  const streamRe = /\bstream\r?\n/g;
+  let m: RegExpExecArray | null;
+  while ((m = streamRe.exec(fullText)) !== null) {
+    const dataStart = m.index + m[0].length;
+    const endIdx = fullText.indexOf("endstream", dataStart);
+    if (endIdx < 0) continue;
+    // Trim trailing \r\n / \n before endstream
+    let dataEnd = endIdx;
+    if (fullText[dataEnd - 1] === "\n") dataEnd--;
+    if (fullText[dataEnd - 1] === "\r") dataEnd--;
+    if (dataEnd <= dataStart) continue;
+
+    const compressed = raw.subarray(dataStart, dataEnd);
+    const decompressed = await inflate(compressed);
+    if (!decompressed) continue;
+    const decText = new TextDecoder("latin1").decode(decompressed);
+    if (!decText.includes("/VP[")) continue;
+    const hit = parseFromText(decText, pageSize);
+    if (hit) return hit;
+  }
+
+  return null;
 }
 
 /**
