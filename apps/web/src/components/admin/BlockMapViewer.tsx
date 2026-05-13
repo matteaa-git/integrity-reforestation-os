@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { parseGeoPdf, geoToCanvasPx, canvasPxToGeo, type GeoPdfMeta } from "@/lib/geopdf";
 import { getAllRecords, saveRecord, deleteRecord } from "@/lib/productionDb";
 
@@ -509,12 +510,21 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
     }
   }
 
-  return (
+  // Render the modal as a portal directly on document.body. Otherwise it's
+  // trapped inside whatever stacking context it was mounted in (e.g. the
+  // mobile admin shell's content wrapper, which sits below the top/bottom
+  // nav bars — that's why map header buttons got hidden behind the bottom
+  // tab strip on iPhone).
+  if (typeof document === "undefined") return null;
+
+  const modal = (
     <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col"
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col"
       role="dialog"
       aria-modal="true"
       style={{
+        // z higher than the mobile shell's outer container (9999).
+        zIndex: 99999,
         // Respect iOS status bar / notch / browser URL bar so the header isn't
         // hidden behind them on iPad Safari and similar.
         paddingTop:    "env(safe-area-inset-top)",
@@ -553,10 +563,11 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
               dropMode
                 ? "border-amber-400/60 text-amber-400 bg-amber-400/10"
                 : "border-border text-text-secondary hover:text-text-primary"
-            }`}
+            } disabled:opacity-40 disabled:cursor-not-allowed`}
             disabled={!hasGeo || loading}
+            title={!hasGeo ? "Map isn't georeferenced — pins need GPS coordinates" : ""}
           >
-            {dropMode ? "Tap map…" : "+ Pin"}
+            {!hasGeo ? "Pin (no GPS)" : dropMode ? "Tap map…" : "+ Pin"}
           </button>
           <button
             onClick={() => setListOpen(v => !v)}
@@ -940,4 +951,6 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

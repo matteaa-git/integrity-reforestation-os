@@ -690,8 +690,9 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
 
   return (
     <div className="flex h-full overflow-hidden">
-      {/* ── Left: Project List ── (full-width on mobile, fixed 240 px from md up) */}
-      <div className={`${selectedProject ? "hidden md:flex" : "flex"} w-full md:w-60 bg-surface border-r border-border flex-col shrink-0`}>
+      {/* ── Left: Project List ── (full-width on mobile/landscape phone,
+          fixed 240 px from lg up — the /admin/mobile redirect threshold). */}
+      <div className={`${selectedProject ? "hidden lg:flex" : "flex"} w-full lg:w-60 bg-surface border-r border-border flex-col shrink-0`}>
         <div className="p-3 border-b border-border space-y-2">
           {isAdmin && (
             <>
@@ -784,8 +785,8 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
         </div>
       </div>
 
-      {/* ── Right: Project Detail ── (hidden on mobile until a project is selected) */}
-      <div className={`${selectedProject ? "flex" : "hidden md:flex"} flex-1 flex-col min-w-0 overflow-hidden`}>
+      {/* ── Right: Project Detail ── (hidden on mobile/landscape phone until selected) */}
+      <div className={`${selectedProject ? "flex" : "hidden lg:flex"} flex-1 flex-col min-w-0 overflow-hidden`}>
         {!selectedProject ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
@@ -808,10 +809,10 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
           <>
             {/* Project header */}
             <div className="bg-surface border-b border-border px-4 sm:px-6 py-3 sm:py-4 shrink-0">
-              {/* Mobile: back to project list */}
+              {/* Mobile / landscape phone: back to project list */}
               <button
                 onClick={() => setSelectedId(null)}
-                className="md:hidden mb-2 inline-flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-text-primary"
+                className="lg:hidden mb-2 inline-flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-text-primary"
               >
                 <span>←</span> Projects
               </button>
