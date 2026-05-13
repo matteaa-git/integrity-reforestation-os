@@ -379,13 +379,17 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
   useEffect(() => { fitToScreen(); }, [fitToScreen]);
 
   // ── Auto-follow GPS dot ────────────────────────────────────────────────
+  // Only follow when the GPS is *inside* the map's registered bounds. If the
+  // user is far off-block (e.g. surveying at the camp), following would
+  // translate the rendered map clean off the viewport and leave them staring
+  // at a blank canvas with just the dot. The off-screen arrow handles that
+  // case visually.
   useEffect(() => {
-    if (!autoFollow || !dot || !viewportRef.current || !canvasSize) return;
+    if (!autoFollow || !dot || !dot.insideMap || !viewportRef.current || !canvasSize) return;
     const vp = viewportRef.current.getBoundingClientRect();
-    // Position dot at the centre of the viewport.
     setTx(vp.width  / 2 - dot.x * zoom);
     setTy(vp.height / 2 - dot.y * zoom);
-  }, [dot?.x, dot?.y, autoFollow, zoom, canvasSize]);
+  }, [dot?.x, dot?.y, dot?.insideMap, autoFollow, zoom, canvasSize]);
 
   // ── Pan / zoom interactions ────────────────────────────────────────────
   const dragRef  = useRef<{ x: number; y: number; tx: number; ty: number; moved: boolean } | null>(null);
@@ -491,9 +495,11 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
     }
   }
 
-  // Off-screen indicator: arrow when dot is outside visible area.
+  // Off-screen indicator: arrow when dot is outside visible area. Visible
+  // regardless of follow state — if the user is off-block, follow is paused
+  // so the arrow is the only hint about where their position is.
   let arrow: { angle: number } | null = null;
-  if (dot && viewportRef.current && !autoFollow) {
+  if (dot && viewportRef.current) {
     const vp = viewportRef.current.getBoundingClientRect();
     const dotScreenX = dot.x * zoom + tx;
     const dotScreenY = dot.y * zoom + ty;
@@ -715,6 +721,11 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
         {!loading && hasGeo && posError && (
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[11px] px-3 py-1.5 rounded-lg shadow-lg">
             {posError}
+          </div>
+        )}
+        {!loading && hasGeo && dot && !dot.insideMap && !posError && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-amber-500/15 border border-amber-500/40 text-amber-400 text-[11px] px-3 py-1.5 rounded-lg shadow-lg pointer-events-none">
+            You&apos;re outside this block&apos;s area — map shown; follow paused.
           </div>
         )}
 
