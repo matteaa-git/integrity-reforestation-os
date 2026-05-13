@@ -510,7 +510,19 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col"
+      role="dialog"
+      aria-modal="true"
+      style={{
+        // Respect iOS status bar / notch / browser URL bar so the header isn't
+        // hidden behind them on iPad Safari and similar.
+        paddingTop:    "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft:   "env(safe-area-inset-left)",
+        paddingRight:  "env(safe-area-inset-right)",
+      }}
+    >
       {/* Header — explicit two-row layout so action buttons are always reachable
           on tablets/phones regardless of how the viewport flex math shakes out. */}
       <div className="bg-surface border-b border-border px-3 sm:px-5 py-2 sm:py-3 space-y-2">

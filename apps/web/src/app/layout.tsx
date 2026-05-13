@@ -1,9 +1,18 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Integrity Social Media Machine",
   description: "Content production and paid-growth operating system for Integrity Reforestation",
+};
+
+// viewport-fit=cover lets us read env(safe-area-inset-top) etc. on iPad
+// Safari so fullscreen modals (e.g. the block map viewer) can avoid the
+// status bar / dynamic browser chrome.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
