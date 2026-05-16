@@ -1,9 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 
 export const metadata: Metadata = {
   title: "Integrity Social Media Machine",
   description: "Content production and paid-growth operating system for Integrity Reforestation",
+  // Lets the app be installed to the iOS home screen with full-screen chrome
+  // hidden, which matters for field crews on iPads/phones.
+  appleWebApp: {
+    capable: true,
+    title: "Integrity",
+    statusBarStyle: "default",
+  },
+  icons: {
+    apple: "/integrity-logo.png",
+  },
 };
 
 // viewport-fit=cover lets us read env(safe-area-inset-top) etc. on iPad
@@ -13,6 +24,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#0d0d0d",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -25,6 +37,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         {children}
+        <ServiceWorkerRegistrar />
       </body>
     </html>
   );
