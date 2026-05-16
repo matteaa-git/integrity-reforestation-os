@@ -279,10 +279,6 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
 
         const parsed = await parseGeoPdf(buf);
         if (cancelled) return;
-        if (parsed) {
-          setMeta(parsed);
-          setHasGeo(true);
-        }
 
         // Lazy-import pdf.js (legacy build — transpiles away modern Map/Set
         // primitives like getOrInsertComputed that crash older Safari/Chrome).
@@ -313,6 +309,21 @@ export default function BlockMapViewer({ url, name, blockName, projectId, fileId
         if (cancelled) return;
         console.log("[BlockMapViewer] render complete");
         setCanvasSize({ w: canvas.width, h: canvas.height });
+
+        // Now that pdf.js has the page, override the parsed pageSize with the
+        // *actual* MediaBox dimensions (page.view = [x1,y1,x2,y2] in PDF pts).
+        // For PDFs whose MediaBox lives inside a compressed object stream
+        // (e.g. Km 78 79.pdf) the regex parser fell back to a guessed US-Letter
+        // page size, and the GPS dot ended up off-position because every
+        // canvas-pixel calculation used the wrong page dimensions.
+        if (parsed) {
+          const [vx1, vy1, vx2, vy2] = page.view;
+          const truePageSize: [number, number] = [vx2 - vx1, vy2 - vy1];
+          const fixed = { ...parsed, pageSize: truePageSize };
+          setMeta(fixed);
+          setHasGeo(true);
+          console.log(`[BlockMapViewer] pageSize parsed=${parsed.pageSize.join("×")} actual=${truePageSize.join("×")}`);
+        }
 
         setLoading(false);
       } catch (err) {
