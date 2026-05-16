@@ -1657,18 +1657,36 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
           const eg = effGoodOf(p);
           const pq = p.treesPlanted > 0 ? (eg / p.treesPlanted) * 100 : 0;
           const pd = eg * 200;
+          const plantable = plantableOf(p);
+          // Per-plot infractions: code:count, only non-zero. Over-plant gets
+          // a "OP" pseudo-code so it shows up alongside the survey infractions.
+          const plotOver = overplantOf(p);
+          const codes: string[] = [];
+          for (const { key, code } of INFRACTION_LABELS) {
+            const v = p.infractions[key] ?? 0;
+            if (v > 0) codes.push(`${code}:${v}`);
+          }
+          if (plotOver > 0) codes.push(`OP:${plotOver}`);
+          const infrCell = codes.length === 0
+            ? `<span style="color:#16a34a">—</span>`
+            : codes.join(" &middot; ");
           return `<tr>
             <td>${p.date}</td>
             <td>${p.plotNumber || "—"}</td>
             <td>${p.crewBoss}</td>
             <td>${p.surveyor || "—"}</td>
+            <td class="r">${fmt(plantable)}</td>
             <td class="r">${fmt(p.treesPlanted)}</td>
             <td class="r">${fmt(eg)}</td>
             <td class="r"><b>${pq.toFixed(1)}%</b></td>
             <td class="r">${fmt(pd)}</td>
+            <td style="font-family:monospace;font-size:10px;color:#374151">${infrCell}</td>
             <td style="font-size:11px;color:#6b7280">${p.notes ?? ""}</td>
           </tr>`;
         }).join("");
+      // Legend mapping infraction codes → labels, shown right under the
+      // per-block infraction chips so the codes column in the table is readable.
+      const legendItems = INFRACTION_LABELS.map(({ code, label }) => `<span><b>${code}</b> ${label}</span>`).join(" &middot; ");
       return `
         <div class="block-section">
           <div class="block-header">
@@ -1676,12 +1694,14 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
             <div class="stats">${plots.length} plot${plots.length !== 1 ? "s" : ""} &middot; ${fmt(tGood)}/${fmt(tPlanted)} good (${q.toFixed(1)}%) &middot; Density ${fmt(d)} stems/ha &middot; Stocking ${ss.toFixed(1)}%</div>
           </div>
           ${infrChips ? `<div class="infraction-chips">${infrChips}</div>` : ""}
+          <div style="font-size:10px;color:#6b7280;margin:-4px 0 12px;line-height:1.55">${legendItems} &middot; <b>OP</b> Over-Plant</div>
           <table>
             <thead>
               <tr>
                 <th>Date</th><th>Plot #</th><th>Crew Boss</th><th>Surveyor</th>
-                <th class="r">Planted</th><th class="r">Good</th>
+                <th class="r">Plantable</th><th class="r">Planted</th><th class="r">Good</th>
                 <th class="r">Quality %</th><th class="r">Density (s/ha)</th>
+                <th>Infractions</th>
                 <th>Notes</th>
               </tr>
             </thead>
