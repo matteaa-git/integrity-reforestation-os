@@ -714,13 +714,26 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
 
   function exportBlockCSV() {
     const allSpeciesList = [...new Set(allBlockSummary.flatMap(b => [...b.species.keys()]))].sort();
-    const headers = ["Block","Planters","Total Trees","Total Earnings",
+    const headers = ["Block","Planters","Prescription","Total Trees","Variance","Total Earnings",
+      ...allSpeciesList.map(s => `${s} Prescribed`),
       ...allSpeciesList.map(s => `${s} Trees`),
       ...allSpeciesList.map(s => `${s} Earnings ($)`)];
     const rows: string[][] = [headers];
     for (const b of allBlockSummary) {
+      const pbEntry = projectBlocks.find(pb => pb.blockName.trim().toLowerCase() === b.block.trim().toLowerCase());
+      const target = blockTargets.get(`${b.project}|${b.block}`);
+      const allocByLower = pbEntry
+        ? new Map(pbEntry.allocations.map(a => [a.species.trim().toLowerCase(), a.trees]))
+        : new Map<string, number>();
+      const prescribedTotal = target?.prescription ?? (pbEntry?.allocations.reduce((s, a) => s + a.trees, 0) ?? 0);
+      const variance = prescribedTotal > 0 ? b.totalTrees - prescribedTotal : 0;
       rows.push([
-        b.block, String(b.planters.size), String(b.totalTrees), b.totalEarnings.toFixed(2),
+        b.block, String(b.planters.size),
+        prescribedTotal > 0 ? String(prescribedTotal) : "",
+        String(b.totalTrees),
+        prescribedTotal > 0 ? (variance >= 0 ? `+${variance}` : String(variance)) : "",
+        b.totalEarnings.toFixed(2),
+        ...allSpeciesList.map(s => String(allocByLower.get(s.trim().toLowerCase()) ?? "")),
         ...allSpeciesList.map(s => String(b.species.get(s)?.trees ?? 0)),
         ...allSpeciesList.map(s => (b.species.get(s)?.earnings ?? 0).toFixed(2)),
       ]);
@@ -956,14 +969,58 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     let body = `<h1 style="font-size:16px;margin-bottom:16px">Block Summary</h1>`;
     for (const b of allBlockSummary) {
       const speciesRows = [...b.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
-      body += `<h2 style="font-size:13px;margin:16px 0 6px">${b.block} — ${b.planters.size} planters · ${fmt(b.totalTrees)} trees · ${fmtC(b.totalEarnings)}</h2>
+      const pbEntry = projectBlocks.find(pb => pb.blockName.trim().toLowerCase() === b.block.trim().toLowerCase());
+      const target = blockTargets.get(`${b.project}|${b.block}`);
+      const allocByLower = pbEntry
+        ? new Map(pbEntry.allocations.map(a => [a.species.trim().toLowerCase(), a.trees]))
+        : new Map<string, number>();
+      const prescribedTotal = target?.prescription ?? (pbEntry?.allocations.reduce((s, a) => s + a.trees, 0) ?? 0);
+      const variance = prescribedTotal > 0 ? b.totalTrees - prescribedTotal : 0;
+      const variancePct = prescribedTotal > 0 ? (variance / prescribedTotal) * 100 : 0;
+      const headerStats = [
+        `${b.planters.size} planter${b.planters.size !== 1 ? "s" : ""}`,
+        prescribedTotal > 0 ? `Prescribed ${fmt(prescribedTotal)}` : null,
+        `Planted ${fmt(b.totalTrees)}`,
+        prescribedTotal > 0 ? `${variance >= 0 ? "+" : ""}${fmt(variance)} (${variancePct >= 0 ? "+" : ""}${variancePct.toFixed(1)}%)` : null,
+        fmtC(b.totalEarnings),
+      ].filter(Boolean).join(" · ");
+      body += `<h2 style="font-size:13px;margin:16px 0 6px">${b.block} — ${headerStats}</h2>
 <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
-<thead><tr style="background:#f3f4f6">${["Species","Code","Trees","Earnings"].map(h => `<th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">${h}</th>`).join("")}</tr></thead>
+<thead><tr style="background:#f3f4f6">${["Species","Code","Prescribed","Planted","Variance","Earnings"].map(h => `<th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">${h}</th>`).join("")}</tr></thead>
 <tbody>`;
-      for (const [species, s] of speciesRows) {
-        body += `<tr><td style="padding:4px 8px;border-bottom:1px solid #f3f4f6">${species}</td><td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;font-family:monospace">${s.code}</td><td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${fmt(s.trees)}</td><td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${fmtC(s.earnings)}</td></tr>`;
+      // Include species that are prescribed but not yet planted (zero rows from allocations).
+      const allSpeciesForBlock = new Set<string>([
+        ...speciesRows.map(([sp]) => sp),
+        ...(pbEntry?.allocations.map(a => a.species) ?? []),
+      ]);
+      const rows = [...allSpeciesForBlock].map(species => {
+        const s = b.species.get(species);
+        const prescribed = allocByLower.get(species.trim().toLowerCase()) ?? 0;
+        const planted = s?.trees ?? 0;
+        const earnings = s?.earnings ?? 0;
+        const v = prescribed > 0 ? planted - prescribed : 0;
+        return { species, code: s?.code ?? "", prescribed, planted, earnings, variance: v };
+      }).sort((a, bv) => bv.planted - a.planted);
+      for (const r of rows) {
+        const varCell = r.prescribed > 0
+          ? `${r.variance >= 0 ? "+" : ""}${fmt(r.variance)}`
+          : "—";
+        body += `<tr>
+          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6">${r.species}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;font-family:monospace">${r.code}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${r.prescribed > 0 ? fmt(r.prescribed) : "—"}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${fmt(r.planted)}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right;color:${r.prescribed > 0 ? (r.variance > 0 ? "#dc2626" : r.variance < 0 ? "#d97706" : "#16a34a") : "#9ca3af"}">${varCell}</td>
+          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${fmtC(r.earnings)}</td>
+        </tr>`;
       }
-      body += `<tr style="font-weight:600;background:#f9fafb"><td colspan="2" style="padding:4px 8px">Total</td><td style="padding:4px 8px;text-align:right">${fmt(b.totalTrees)}</td><td style="padding:4px 8px;text-align:right">${fmtC(b.totalEarnings)}</td></tr></tbody></table>`;
+      body += `<tr style="font-weight:600;background:#f9fafb">
+        <td colspan="2" style="padding:4px 8px">Total</td>
+        <td style="padding:4px 8px;text-align:right">${prescribedTotal > 0 ? fmt(prescribedTotal) : "—"}</td>
+        <td style="padding:4px 8px;text-align:right">${fmt(b.totalTrees)}</td>
+        <td style="padding:4px 8px;text-align:right">${prescribedTotal > 0 ? (variance >= 0 ? "+" : "") + fmt(variance) : "—"}</td>
+        <td style="padding:4px 8px;text-align:right">${fmtC(b.totalEarnings)}</td>
+      </tr></tbody></table>`;
     }
     openPrintWindow(body, "Block Summary");
     setOpenExport(null);
@@ -6838,15 +6895,19 @@ ${blockSections}
                       const hasAny = speciesRows.some(([sp]) => latestAdjMap.has(`${b.project}|${b.block}|${sp}`));
                       const targetKey = `${b.project}|${b.block}`;
                       const target = blockTargets.get(targetKey);
-                      const prescription   = target?.prescription   ?? 0;
-                      const treesDelivered = target?.treesDelivered ?? 0;
-                      const treesPlanted   = b.totalTrees;
-                      const remaining      = prescription > 0 ? prescription - treesPlanted : null;
-
+                      // Per-species prescription from the project's ProjectBlock allocations.
                       const pbEntry = projectBlocks.find(pb => pb.blockName.trim().toLowerCase() === b.block.trim().toLowerCase());
                       const prescriptionBySpecies = pbEntry
                         ? new Map(pbEntry.allocations.map(a => [a.species.trim().toLowerCase(), a.trees]))
                         : new Map<string, number>();
+                      const prescribedFromAllocations = pbEntry
+                        ? pbEntry.allocations.reduce((s, a) => s + a.trees, 0)
+                        : 0;
+                      // Fall back to the imported allocation total when no manual target has been set.
+                      const prescription   = target?.prescription   ?? prescribedFromAllocations;
+                      const treesDelivered = target?.treesDelivered ?? 0;
+                      const treesPlanted   = b.totalTrees;
+                      const remaining      = prescription > 0 ? prescription - treesPlanted : null;
 
                       async function updateTarget(field: "prescription" | "treesDelivered", raw: string) {
                         const val = parseInt(raw, 10);
