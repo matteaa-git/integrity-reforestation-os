@@ -18,6 +18,13 @@ import {
   seedEmployeesData as idbSeedEmployees,
   getAllEmployees as idbGetAllEmployees,
 } from "@/lib/adminDb";
+import {
+  getCachedAll,
+  setCachedAll,
+  cacheRecord,
+  removeCachedRecord,
+  isOnline,
+} from "@/lib/offlineCache";
 
 // Re-export constant and types so DailyProductionReport only needs one import
 export { REEFER_STORAGE } from "@/lib/adminDb";
@@ -47,21 +54,39 @@ function sb() {
 }
 
 async function sbGetAll<T>(storeName: string): Promise<T[]> {
-  const { data, error } = await sb()
-    .from(APP_DATA_TABLE)
-    .select("data")
-    .eq("table_name", storeName);
-  if (error) {
-    console.error("[productionDb] read error:", storeName, error.message);
-    return [];
+  // Offline: return cached snapshot.
+  if (!isOnline()) {
+    return getCachedAll<T>(storeName);
   }
-  return (data ?? []).map((r) => r.data as T);
+  // Online: try Supabase first, refresh cache, fall back to cache on error
+  // (covers navigator.onLine lying — e.g. captive-portal WiFi).
+  try {
+    const { data, error } = await sb()
+      .from(APP_DATA_TABLE)
+      .select("data")
+      .eq("table_name", storeName);
+    if (error) throw error;
+    const records = (data ?? []).map((r) => r.data as T);
+    void setCachedAll(storeName, records as Array<T & { id: string }>);
+    return records;
+  } catch (err) {
+    console.warn("[productionDb] read fell back to cache:", storeName, err);
+    return getCachedAll<T>(storeName);
+  }
 }
 
 async function sbUpsert<T extends { id: string }>(
   storeName: string,
   record: T
 ): Promise<void> {
+  // Keep the local cache in sync first so the UI's next read is consistent
+  // regardless of what happens on the wire.
+  void cacheRecord(storeName, record);
+
+  if (!isOnline()) {
+    // Phase 2: writes still throw when offline. Phase 3 will queue + replay.
+    throw new Error(`[productionDb] offline — write to ${storeName} not sent`);
+  }
   const { error } = await sb()
     .from(APP_DATA_TABLE)
     .upsert(
@@ -77,6 +102,11 @@ async function sbUpsert<T extends { id: string }>(
 }
 
 async function sbDelete(storeName: string, id: string): Promise<void> {
+  void removeCachedRecord(storeName, id);
+
+  if (!isOnline()) {
+    throw new Error(`[productionDb] offline — delete on ${storeName} not sent`);
+  }
   const { error } = await sb()
     .from(APP_DATA_TABLE)
     .delete()
