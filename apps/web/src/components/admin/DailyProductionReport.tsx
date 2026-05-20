@@ -782,7 +782,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const tax    = p(d.incomeTax);
       const addl   = p(d.additionalEarnings);
       const net    = gross + addl - cpp - ei - tax;
-      addEmployee(empId, net * 0.75, net * 0.25, camp, equip);
+      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip);
     }
 
     // Crew Bosses
@@ -801,7 +801,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const tax      = p(d.incomeTax);
       const addl     = p(d.additionalEarnings);
       const net      = gross + addl - cpp - ei - tax;
-      addEmployee(empId, net * 0.75, net * 0.25, camp, equip);
+      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip);
     }
 
     // Hourly / Day Rate
@@ -820,7 +820,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const tax     = p(emp.incomeTax);
       const addl    = p(emp.additionalEarnings);
       const net     = gross + addl - cpp - ei - tax;
-      addEmployee(empId, net * 0.75, net * 0.25, camp, equip);
+      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip);
     }
 
     downloadCSV(rows, `ADP-payroll-${dateFrom}-to-${dateTo}.csv`);
@@ -5609,10 +5609,10 @@ ${blockSections}
                                 </td>
                                 {/* Allocation columns */}
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                                  {fmtC(net * 0.25)}
+                                  {fmtC(gross * 0.25)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                                  {fmtC(net * 0.75)}
+                                  {fmtC(gross * 0.75)}
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <button
@@ -5637,7 +5637,7 @@ ${blockSections}
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
                                         cpp, ei, incomeTax: tax, net,
-                                        special: net * 0.25, regular: net * 0.75,
+                                        special: gross * 0.25, regular: gross * 0.75,
                                         additionalEarnings: addl, notes: d.notes,
                                       });
                                     }}
@@ -5901,10 +5901,10 @@ ${blockSections}
                                   {fmtC(net)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                                  {fmtC(net * 0.25)}
+                                  {fmtC(gross * 0.25)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                                  {fmtC(net * 0.75)}
+                                  {fmtC(gross * 0.75)}
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <button
@@ -5922,7 +5922,7 @@ ${blockSections}
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
                                         cpp, ei, incomeTax: tax, net,
-                                        special: net * 0.25, regular: net * 0.75,
+                                        special: gross * 0.25, regular: gross * 0.75,
                                         additionalEarnings: addl, notes: d.notes,
                                       });
                                     }}
@@ -6175,10 +6175,10 @@ ${blockSections}
                               {fmtC(net)}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                              {fmtC(net * 0.25)}
+                              {fmtC(gross * 0.25)}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                              {fmtC(net * 0.75)}
+                              {fmtC(gross * 0.75)}
                             </td>
                             <td className="px-2 py-1.5 text-center">
                               <button
@@ -6197,7 +6197,7 @@ ${blockSections}
                                     hours, hourlyEarned, topUp, ytd: 0,
                                     otHours, otPay, prevAvgHourly,
                                     cpp, ei, incomeTax: tax, net,
-                                    special: net * 0.25, regular: net * 0.75,
+                                    special: gross * 0.25, regular: gross * 0.75,
                                     additionalEarnings: addl, notes: emp.notes,
                                   });
                                 }}
@@ -8173,7 +8173,7 @@ ${earningsSection}
 <table><tbody>
   <tr><td style="padding:6px 10px">25% Special Worksite Allowance</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.special)}</td></tr>
   <tr><td style="padding:6px 10px">75% Regular Employment Income</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.regular)}</td></tr>
-  <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:6px 10px">Net Pay</td><td style="padding:6px 10px;text-align:right">${fmtC(r.net)}</td></tr>
+  <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:6px 10px">Gross Taxable</td><td style="padding:6px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
 </tbody></table>
 
 ${dailySection}
@@ -8314,7 +8314,7 @@ ${dailySection}
                       <tbody className="divide-y divide-gray-100">
                         <tr><td className="px-4 py-2.5 text-gray-600">25% Special Worksite Allowance</td><td className="px-4 py-2.5 text-right font-semibold tabular-nums">{fmtC(r.special)}</td></tr>
                         <tr><td className="px-4 py-2.5 text-gray-600">75% Regular Employment Income</td><td className="px-4 py-2.5 text-right font-semibold tabular-nums">{fmtC(r.regular)}</td></tr>
-                        <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Net Pay</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.net)}</td></tr>
+                        <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Gross Taxable</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.gross)}</td></tr>
                       </tbody>
                     </table>
                   </div>
