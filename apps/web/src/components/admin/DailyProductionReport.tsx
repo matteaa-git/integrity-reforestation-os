@@ -760,8 +760,11 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       ["Position ID", "Payment Type", "Earnings Code", "Earnings Amount", "Hours", "Deduction Code", "Deduction Amount"],
     ];
 
-    function addEmployee(empId: string, regular: number, special: number, camp: number, equip: number) {
-      rows.push([empId, "CPA", "1",  regular.toFixed(2), "", "", ""]);
+    function addEmployee(empId: string, regular: number, special: number, camp: number, equip: number, hours: number) {
+      // Hours sit on the regular-wages row only (ADP convention — the
+      // special-worksite row is an allowance, not paid against hours).
+      const hoursCell = hours > 0 ? hours.toFixed(2) : "";
+      rows.push([empId, "CPA", "1",  regular.toFixed(2), hoursCell, "", ""]);
       rows.push([empId, "CPA", "A0", special.toFixed(2), "", "", ""]);
       rows.push([empId, "CPA", "", "", "", "47", camp > 0 ? camp.toFixed(2) : ""]);
       rows.push([empId, "CPA", "", "", "", "48", equip > 0 ? equip.toFixed(2) : ""]);
@@ -782,7 +785,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const tax    = p(d.incomeTax);
       const addl   = p(d.additionalEarnings);
       const net    = gross + addl - cpp - ei - tax;
-      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip);
+      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip, pl.totalHours);
     }
 
     // Crew Bosses
@@ -794,14 +797,15 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const camp     = p(d.campCosts);
       const equip    = p(d.equipDeduction);
       const other    = p(d.other);
-      const topUp    = calcTopUp(earnings, p(d.hours));
+      const hours    = p(d.hours);
+      const topUp    = calcTopUp(earnings, hours);
       const gross    = earnings + topUp - camp - equip - other;
       const cpp      = gross > 0 ? gross * 0.0595 : 0;
       const ei       = gross > 0 ? gross * 0.0166 : 0;
       const tax      = p(d.incomeTax);
       const addl     = p(d.additionalEarnings);
       const net      = gross + addl - cpp - ei - tax;
-      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip);
+      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip, hours);
     }
 
     // Hourly / Day Rate
@@ -820,7 +824,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const tax     = p(emp.incomeTax);
       const addl    = p(emp.additionalEarnings);
       const net     = gross + addl - cpp - ei - tax;
-      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip);
+      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip, hrs);
     }
 
     downloadCSV(rows, `ADP-payroll-${dateFrom}-to-${dateTo}.csv`);
