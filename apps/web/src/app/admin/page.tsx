@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/productionDb";
+import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord, backfillEmployeePositionIds } from "@/lib/productionDb";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import AdminTopbar from "@/components/admin/AdminTopbar";
 import AdminDashboard from "@/components/admin/AdminDashboard";
@@ -136,6 +136,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     seedEmployeesData()
+      .then(() => backfillEmployeePositionIds())
       .then(() => getAllEmployees())
       .then((all) => setEmployees((all as Employee[]).sort((a, b) => a.name.localeCompare(b.name))))
       .catch((err) => console.error("[Admin] seedEmployeesData failed:", err));

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord } from "@/lib/productionDb";
+import { seedEmployeesData, getAllEmployees, saveRecord, deleteRecord, backfillEmployeePositionIds } from "@/lib/productionDb";
 import { type UserRole, ROLE_PERMISSIONS } from "@/lib/roles";
 
 import MobileAdminShell      from "@/components/admin/MobileAdminShell";
@@ -58,6 +58,7 @@ export default function MobileAdminPage() {
 
   useEffect(() => {
     seedEmployeesData()
+      .then(() => backfillEmployeePositionIds())
       .then(() => getAllEmployees())
       .then((all) => setEmployees((all as Employee[]).sort((a, b) => a.name.localeCompare(b.name))))
       .catch((err) => console.error("[Admin] seedEmployeesData failed:", err));

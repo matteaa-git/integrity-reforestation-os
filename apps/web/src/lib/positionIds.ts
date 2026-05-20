@@ -1,0 +1,73 @@
+/**
+ * positionIds.ts
+ *
+ * ADP Position IDs keyed by employee full name. Generated from
+ * Employee Roster.xlsx; regenerate when ADP issues new hires or
+ * position id changes (see scripts/generate-position-ids.ts).
+ *
+ * Names not in this map fall back to "—" in payroll exports.
+ */
+
+export const POSITION_IDS_BY_NAME: Record<string, string> = {
+  "Charles Leblanc": "34NZ000000005",
+  "Scout Broughton": "34NZ020250022",
+  "Ema Regina Pablo-Fortier": "34NZ000000229",
+  "Caleb Gonsalves": "34NZ020250020",
+  "Davente Schab": "34NZ002025003",
+  "Malcolm Cowley": "34NZ020250018",
+  "Gaetane Slootweg Allepuz": "34NZ020250013",
+  "Miah Jane Tretter": "34NZ020260001",
+  "Quinten Macleod Emmer": "34NZ020250035",
+  "Aidan McDonald": "34NZ002025007",
+  "Ginger Anne Currie": "34NZ020250040",
+  "Evan MacDougall": "34NZ020260002",
+  "Tyler Anthony Gallant": "34NZ020260003",
+  "Aidan Cliche": "34NZ020250046",
+  "Richard Jackson Gattesco": "34NZ000000240",
+  "Alexandra Garland": "34NZ000000206",
+  "Diego Gonzalez": "34NZ020260004",
+  "William Danny Lubitz": "34NZ000000261",
+  "Ryan Terrance Clark": "34NZ020260005",
+  "Tshimanga Orly Kanyinda": "34NZ020260006",
+  "Wany Mawau Ruathdel": "34NZ020260007",
+  "Gabrielle Voelzing": "34NZ000000020",
+  "Blu-Maszyel Simon": "34NZ020260008",
+  "Daniel Sivell-Legender": "34NZ020260009",
+  "Jolissa Lonsberry": "34NZ000000200",
+  "Nathaniel Brouwer": "34NZ020260010",
+  "Stephanie McGee": "34NZ000000237",
+  "Brittney Taylor Shanks": "34NZ000000207",
+  "Michael Grivich": "34NZ020260011",
+  "Hayden Hudson-Cox": "34NZ020260012",
+  "Sebastian Jagelewski": "34NZ000000214",
+  "Charlie Malcolm Sylver": "34NZ000000004",
+  "Finn Watson": "34NZ020260013",
+  "Lucas James Watson": "34NZ000000042",
+  "Addison McKenzie": "34NZ020250041",
+  "Zachary Robert Durham": "34NZ020260014",
+  "Benjamin Tyler Holmes": "34NZ020260015",
+  "Adam Deruyte": "34NZ000000221",
+  "Cameron DeRuyte": "34NZ000000040",
+  "James Dean Gattesco": "34NZ020260016",
+  "Antoyne Gravelle": "34NZ020260017",
+  "Jordan Taylor": "34NZ020260018",
+  "Ché Breadner": "34NZ020260019",
+  "Keona Gingras": "34NZ020260020",
+  "Chloé Ménard": "34NZ020260021",
+  "Brandon Maxwell Wright": "34NZ020250023",
+  "Djorbo Bakhit Mahmoud": "34NZ020260022",
+  "Ella Grace Williamson": "34NZ020260023",
+  "Ben Feldman Starosta": "34NZ020260024",
+  "David Forrest Currie": "34NZ020260025",
+  "Ethan Wild Robin": "34NZ002025001",
+  "Joey Speicher": "34NZ020260026",
+  "Ansley Che A": "34NZ020250027",
+  "Matthew Ronald Bell": "34NZ020250011",
+  "Brendan Donald McKenzie": "34NZ020260029",
+  "Benjamin Richard Leigh Ruben Mitchell": "34NZ020260031",
+  "James Stephen Samhaber": "34NZ020260027",
+  "Matthew Byrne Colas": "34NZ020260032",
+  "Noah Doell": "34NZ020260028",
+  "Real Bain": "34NZ020260030",
+  "Sebastian Candela": "34NZ000000247"
+};

@@ -1,5 +1,6 @@
 import type { Employee } from "@/app/admin/page";
 import { saveRecord } from "@/lib/adminDb";
+import { POSITION_IDS_BY_NAME } from "@/lib/positionIds";
 
 function initials(name: string) {
   const parts = name.trim().split(" ");
@@ -40,6 +41,7 @@ function emp(
     status: "active",
     startDate: "2026-05-01",
     avatar: initials(name),
+    employeeNumber: POSITION_IDS_BY_NAME[name],
     city,
     province,
     crewBoss: crewBoss || undefined,
