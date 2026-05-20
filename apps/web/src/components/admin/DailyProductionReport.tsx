@@ -112,6 +112,16 @@ function fmtC(n: number) {
   return "$" + n.toLocaleString("en-CA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`; }
+
+// Ontario general minimum wage. Used to compute the top-up that brings
+// piece-rate earnings up to the legal hourly floor — that top-up is part of
+// gross taxable pay, so CPP/EI/tax all calc on (earnings + top-up).
+const MIN_WAGE = 17.20;
+function calcTopUp(earnings: number, hours: number): number {
+  if (hours <= 0) return 0;
+  const floor = MIN_WAGE * hours;
+  return earnings < floor ? floor - earnings : 0;
+}
 function resolveRate(rate: SpeciesRate, trees: number, sessionTotal?: number): number {
   if (rate.rateType === "tiered" && rate.tierThreshold != null && rate.rateBelowThreshold != null && rate.rateAboveThreshold != null) {
     // Use session-level combined total when available (crew boss entry pricing)
@@ -765,7 +775,8 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const camp   = p(d.campCosts);
       const equip  = p(d.equipDeduction);
       const other  = p(d.other);
-      const gross  = pl.totalWithVac - camp - equip - other;
+      const topUp  = calcTopUp(pl.totalWithVac, pl.totalHours);
+      const gross  = pl.totalWithVac + topUp - camp - equip - other;
       const cpp    = gross > 0 ? gross * 0.0595 : 0;
       const ei     = gross > 0 ? gross * 0.0166 : 0;
       const tax    = p(d.incomeTax);
@@ -783,7 +794,8 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const camp     = p(d.campCosts);
       const equip    = p(d.equipDeduction);
       const other    = p(d.other);
-      const gross    = earnings - camp - equip - other;
+      const topUp    = calcTopUp(earnings, p(d.hours));
+      const gross    = earnings + topUp - camp - equip - other;
       const cpp      = gross > 0 ? gross * 0.0595 : 0;
       const ei       = gross > 0 ? gross * 0.0166 : 0;
       const tax      = p(d.incomeTax);
@@ -800,7 +812,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const camp    = p(emp.campCosts);
       const equip   = p(emp.equipDeduction);
       const other   = p(emp.other);
-      const gross   = earnings - camp - equip - other;
+      const hrs     = emp.rateType === "hourly" ? p(emp.quantity) : p(emp.hours);
+      const topUp   = calcTopUp(earnings, hrs);
+      const gross   = earnings + topUp - camp - equip - other;
       const cpp     = gross > 0 ? gross * 0.0595 : 0;
       const ei      = gross > 0 ? gross * 0.0166 : 0;
       const tax     = p(emp.incomeTax);
@@ -827,11 +841,12 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const empId  = empEnt?.employeeNumber ?? "—";
       const d      = planterDeds[pl.name] ?? { campCosts: "", equipDeduction: "", other: "", cpp: "", ei: "", incomeTax: "", additionalEarnings: "", notes: "" };
       const camp   = p(d.campCosts); const equip = p(d.equipDeduction); const other = p(d.other);
-      const gross  = pl.totalWithVac - camp - equip - other;
+      const topUp  = calcTopUp(pl.totalWithVac, pl.totalHours);
+      const gross  = pl.totalWithVac + topUp - camp - equip - other;
       const cpp    = gross > 0 ? gross * 0.0595 : 0;
       const ei     = gross > 0 ? gross * 0.0166 : 0;
       const tax    = p(d.incomeTax); const addl = p(d.additionalEarnings);
-      empRows.push({ name: pl.name, empId, role: "Planter", trees: pl.totalTrees, gross: pl.totalWithVac, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
+      empRows.push({ name: pl.name, empId, role: "Planter", trees: pl.totalTrees, gross: pl.totalWithVac + topUp, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
     }
 
     for (const c of crewSummary) {
@@ -840,11 +855,12 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const d        = crewDeds[c.crew] ?? { campCosts: "", equipDeduction: "", other: "", incomeTax: "", hours: "", additionalEarnings: "", notes: "" };
       const earnings = c.totalTrees * CREW_RATE;
       const camp     = p(d.campCosts); const equip = p(d.equipDeduction); const other = p(d.other);
-      const gross    = earnings - camp - equip - other;
+      const topUp    = calcTopUp(earnings, p(d.hours));
+      const gross    = earnings + topUp - camp - equip - other;
       const cpp      = gross > 0 ? gross * 0.0595 : 0;
       const ei       = gross > 0 ? gross * 0.0166 : 0;
       const tax      = p(d.incomeTax); const addl = p(d.additionalEarnings);
-      empRows.push({ name: c.crew, empId, role: "Crew Boss", trees: c.totalTrees, gross: earnings, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
+      empRows.push({ name: c.crew, empId, role: "Crew Boss", trees: c.totalTrees, gross: earnings + topUp, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
     }
 
     for (const emp of hourlyEmps) {
@@ -852,11 +868,13 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const empId   = empEnt?.employeeNumber ?? "—";
       const earnings = p(emp.rate) * p(emp.quantity);
       const camp    = p(emp.campCosts); const equip = p(emp.equipDeduction); const other = p(emp.other);
-      const gross   = earnings - camp - equip - other;
+      const hrs     = emp.rateType === "hourly" ? p(emp.quantity) : p(emp.hours);
+      const topUp   = calcTopUp(earnings, hrs);
+      const gross   = earnings + topUp - camp - equip - other;
       const cpp     = gross > 0 ? gross * 0.0595 : 0;
       const ei      = gross > 0 ? gross * 0.0166 : 0;
       const tax     = p(emp.incomeTax); const addl = p(emp.additionalEarnings);
-      empRows.push({ name: emp.name, empId, role: emp.rateType === "dayrate" ? "Day Rate" : "Hourly", trees: 0, gross: earnings, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
+      empRows.push({ name: emp.name, empId, role: emp.rateType === "dayrate" ? "Day Rate" : "Hourly", trees: 0, gross: earnings + topUp, camp, equip, other, cpp, ei, tax, addl, net: gross + addl - cpp - ei - tax });
     }
 
     const totGross = empRows.reduce((s, r) => s + r.gross, 0);
@@ -5368,7 +5386,7 @@ ${blockSections}
                 <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-4">
                   <div className="text-xs font-semibold text-text-primary">Planter Summary</div>
                   <div className="flex items-center gap-4 text-[10px] text-text-tertiary flex-wrap">
-                    <span><span className="font-semibold text-text-secondary">Gross</span> = Earnings − Camp − Equip − Other</span>
+                    <span><span className="font-semibold text-text-secondary">Gross</span> = Earnings + Min-Wage Top-Up − Camp − Equip − Other</span>
                     <span className="text-border/80">|</span>
                     <span><span className="font-semibold text-text-secondary">Net</span> = Gross − CPP − EI − Income Tax</span>
                     <span className="text-border/80">|</span>
@@ -5451,10 +5469,11 @@ ${blockSections}
                             const camp   = parseNum(d.campCosts);
                             const equip  = parseNum(d.equipDeduction);
                             const other  = parseNum(d.other);
-                            const gross  = p.totalWithVac - camp - equip - other;
                             const hours  = p.totalHours;
                             const hourlyEarned = hours > 0 ? p.totalWithVac / hours : null;
-                            const topUp  = hours > 0 && p.totalWithVac < MIN_WAGE * hours ? MIN_WAGE * hours - p.totalWithVac : 0;
+                            const topUp  = calcTopUp(p.totalWithVac, hours);
+                            // Top-up is part of gross taxable pay, so CPP/EI/tax all run on it.
+                            const gross  = p.totalWithVac + topUp - camp - equip - other;
                             const ytd    = ytdHours.get(empKey) ?? ytdHours.get(p.name) ?? 0;
                             // Overtime: >178h in 4-week period @ 1.5× prev-period avg hourly
                             const OT_THRESHOLD = 178;
@@ -5703,7 +5722,7 @@ ${blockSections}
                     <div className="flex items-center gap-4 text-[10px] text-text-tertiary flex-wrap">
                       <span>Crew Boss earns <span className="font-semibold text-text-secondary">$0.02 / tree</span> planted by their crew</span>
                       <span className="text-border/80">|</span>
-                      <span><span className="font-semibold text-text-secondary">Gross</span> = Earnings − Camp − Equip − Other</span>
+                      <span><span className="font-semibold text-text-secondary">Gross</span> = Earnings + Min-Wage Top-Up − Camp − Equip − Other</span>
                       <span className="text-border/80">|</span>
                       <span><span className="font-semibold text-text-secondary">Net</span> = Gross − CPP − EI − Income Tax</span>
                     </div>
@@ -5774,10 +5793,10 @@ ${blockSections}
                             const camp         = parseNum(d.campCosts);
                             const equip        = parseNum(d.equipDeduction);
                             const other        = parseNum(d.other);
-                            const gross        = totalWithVac - camp - equip - other;
                             const hours        = parseNum(d.hours);
                             const hourlyEarned = hours > 0 ? earnings / hours : null;
-                            const topUp        = hours > 0 && earnings < MIN_WAGE * hours ? MIN_WAGE * hours - earnings : 0;
+                            const topUp        = calcTopUp(earnings, hours);
+                            const gross        = totalWithVac + topUp - camp - equip - other;
                             const crewEmp      = employees.find(e => e.name === c.crew);
                             const crewKey      = crewEmp?.id ?? c.crew;
                             const ytd          = ytdHours.get(crewKey) ?? ytdHours.get(c.crew) ?? 0;
@@ -6026,11 +6045,11 @@ ${blockSections}
                         const camp     = parseNum(emp.campCosts);
                         const equip    = parseNum(emp.equipDeduction);
                         const other    = parseNum(emp.other);
-                        const gross    = earnings - camp - equip - other;
                         // Hours: for hourly type use quantity; for dayrate use explicit hours field
                         const hours    = emp.rateType === "hourly" ? parseNum(emp.quantity) : parseNum(emp.hours);
                         const hourlyEarned = hours > 0 ? earnings / hours : null;
-                        const topUp    = hours > 0 && earnings < MIN_WAGE * hours ? MIN_WAGE * hours - earnings : 0;
+                        const topUp    = calcTopUp(earnings, hours);
+                        const gross    = earnings + topUp - camp - equip - other;
                         // Overtime: >178h/4-wk @ 1.5× avg hourly (use entered rate as avg for hourly; day-rate uses gross/hours)
                         const OT_THRESHOLD  = 178;
                         const otHours       = Math.max(0, hours - OT_THRESHOLD);
@@ -8127,12 +8146,12 @@ ${earningsSection}
     <tr><td style="padding:6px 10px;font-weight:600">Piece-Rate / Base Earnings</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.earnings)}</td></tr>
     ${r.type === "planter" ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Vacation Pay (4%)</td><td style="padding:6px 10px;text-align:right;color:#6b7280">+${fmtC(r.vacPay)}</td></tr>
     <tr><td style="padding:6px 10px;font-weight:600">Total w/ Vac Pay</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.totalWithVac)}</td></tr>` : ""}
+    ${r.topUp > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Min. Wage Top-Up (ON $${MIN_WAGE.toFixed(2)}/h floor)</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(r.topUp)}</td></tr>` : ""}
     ${r.campCosts > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Camp Costs</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.campCosts)}</td></tr>` : ""}
     ${r.equipDeduction > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Equipment Deduction</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.equipDeduction)}</td></tr>` : ""}
     ${r.other > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Other</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.other)}</td></tr>` : ""}
     <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:8px 10px">Gross Taxable</td><td style="padding:8px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
     ${r.otPay != null && r.otPay > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Overtime Pay (${r.otHours}h × 1.5×)</td><td style="padding:6px 10px;text-align:right;color:#d97706">+${fmtC(r.otPay)}</td></tr>` : ""}
-    ${r.topUp > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Min. Wage Top-Up</td><td style="padding:6px 10px;text-align:right;color:#dc2626">+${fmtC(r.topUp)}</td></tr>` : ""}
     <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
     <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">EI (1.66%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.ei)}</td></tr>
     ${r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
@@ -8245,12 +8264,12 @@ ${dailySection}
                         <tr><td className="px-4 py-2 text-gray-700 font-medium">{r.type === "planter" ? "Piece-Rate Earnings" : r.type === "crew" ? `Crew Boss Earnings (${fmt(r.crewTrees ?? 0)} trees × $0.02)` : `${r.rateType === "hourly" ? "Hourly" : "Day Rate"} Earnings`}</td><td className="px-4 py-2 text-right font-semibold tabular-nums">{fmtC(r.earnings)}</td></tr>
                         {r.type === "planter" && r.vacPay > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">+ Vacation Pay (4%)</td><td className="px-4 py-2 text-right text-gray-500 tabular-nums">+{fmtC(r.vacPay)}</td></tr>}
                         {r.type === "planter" && <tr><td className="px-4 py-2 text-gray-700 font-medium">Total w/ Vac Pay</td><td className="px-4 py-2 text-right font-semibold tabular-nums">{fmtC(r.totalWithVac)}</td></tr>}
+                        {r.topUp > 0 && <tr className="bg-emerald-50"><td className="px-4 py-2 text-emerald-700 pl-8 text-[11px]">+ Min. Wage Top-Up (ON ${MIN_WAGE.toFixed(2)}/h floor)</td><td className="px-4 py-2 text-right font-semibold text-emerald-700 tabular-nums">+{fmtC(r.topUp)}</td></tr>}
                         {r.campCosts > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Camp Costs</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.campCosts)}</td></tr>}
                         {r.equipDeduction > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Equipment Deduction</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.equipDeduction)}</td></tr>}
                         {r.other > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Other</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.other)}</td></tr>}
                         <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Gross Taxable</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.gross)}</td></tr>
                         {r.otPay != null && r.otPay > 0 && <tr className="bg-amber-50"><td className="px-4 py-2 text-amber-700 pl-8 text-[11px]">+ Overtime Pay ({r.otHours}h × 1.5 × ${r.prevAvgHourly?.toFixed(2) ?? "—"}/h)</td><td className="px-4 py-2 text-right font-semibold text-amber-700 tabular-nums">+{fmtC(r.otPay)}</td></tr>}
-                        {r.topUp > 0 && <tr className="bg-red-50"><td className="px-4 py-2 text-red-600 pl-8 text-[11px]">+ Min. Wage Top-Up (ON $17.20/h floor)</td><td className="px-4 py-2 text-right font-semibold text-red-600 tabular-nums">+{fmtC(r.topUp)}</td></tr>}
                         <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− CPP (5.95%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.cpp)}</td></tr>
                         <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− EI (1.66%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.ei)}</td></tr>
                         {r.incomeTax > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Income Tax</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.incomeTax)}</td></tr>}
