@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
 import OfflineIndicator from "@/components/OfflineIndicator";
+import SyncQueueDrainer from "@/components/SyncQueueDrainer";
 
 export const metadata: Metadata = {
   title: "Integrity Social Media Machine",
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <ServiceWorkerRegistrar />
+        <SyncQueueDrainer />
         <OfflineIndicator />
       </body>
     </html>

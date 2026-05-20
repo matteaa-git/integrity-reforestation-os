@@ -24,7 +24,18 @@ import {
   cacheRecord,
   removeCachedRecord,
   isOnline,
+  enqueueWrite,
+  getQueuedWrites,
+  dequeueWrite,
+  updateQueuedWrite,
+  type QueuedWrite,
 } from "@/lib/offlineCache";
+
+function isNetworkError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = (err as Error).message ?? String(err);
+  return /failed to fetch|network|load failed|abort|connection|err_internet_disconnected|err_network/i.test(msg);
+}
 
 // Re-export constant and types so DailyProductionReport only needs one import
 export { REEFER_STORAGE } from "@/lib/adminDb";
@@ -84,35 +95,134 @@ async function sbUpsert<T extends { id: string }>(
   void cacheRecord(storeName, record);
 
   if (!isOnline()) {
-    // Phase 2: writes still throw when offline. Phase 3 will queue + replay.
-    throw new Error(`[productionDb] offline — write to ${storeName} not sent`);
+    await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
+    return;
   }
-  const { error } = await sb()
-    .from(APP_DATA_TABLE)
-    .upsert(
-      {
-        table_name: storeName,
-        id: record.id,
-        data: record,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "table_name,id" }
-    );
-  if (error) throw new Error(`[productionDb] upsert ${storeName}: ${error.message}`);
+  try {
+    const { error } = await sb()
+      .from(APP_DATA_TABLE)
+      .upsert(
+        {
+          table_name: storeName,
+          id: record.id,
+          data: record,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "table_name,id" }
+      );
+    if (error) {
+      if (isNetworkError(error)) {
+        await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
+        return;
+      }
+      throw new Error(`[productionDb] upsert ${storeName}: ${error.message}`);
+    }
+  } catch (err) {
+    if (isNetworkError(err)) {
+      await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
+      return;
+    }
+    throw err;
+  }
 }
 
 async function sbDelete(storeName: string, id: string): Promise<void> {
   void removeCachedRecord(storeName, id);
 
   if (!isOnline()) {
-    throw new Error(`[productionDb] offline — delete on ${storeName} not sent`);
+    await enqueueWrite({ table: storeName, recordId: id, op: "delete" });
+    return;
   }
-  const { error } = await sb()
-    .from(APP_DATA_TABLE)
-    .delete()
-    .eq("table_name", storeName)
-    .eq("id", id);
-  if (error) throw new Error(`[productionDb] delete ${storeName}: ${error.message}`);
+  try {
+    const { error } = await sb()
+      .from(APP_DATA_TABLE)
+      .delete()
+      .eq("table_name", storeName)
+      .eq("id", id);
+    if (error) {
+      if (isNetworkError(error)) {
+        await enqueueWrite({ table: storeName, recordId: id, op: "delete" });
+        return;
+      }
+      throw new Error(`[productionDb] delete ${storeName}: ${error.message}`);
+    }
+  } catch (err) {
+    if (isNetworkError(err)) {
+      await enqueueWrite({ table: storeName, recordId: id, op: "delete" });
+      return;
+    }
+    throw err;
+  }
+}
+
+// ── Sync queue drain ─────────────────────────────────────────────────────
+
+/** Replay a single queued op against Supabase. Returns true on success. */
+async function replayWrite(w: QueuedWrite): Promise<boolean> {
+  try {
+    if (w.op === "upsert") {
+      const { error } = await sb()
+        .from(APP_DATA_TABLE)
+        .upsert(
+          {
+            table_name: w.table,
+            id: w.recordId,
+            data: w.data,
+            // Preserve the original enqueue time so concurrent edits on other
+            // devices still win by recency (Supabase last-write-wins).
+            updated_at: new Date(w.enqueuedAt).toISOString(),
+          },
+          { onConflict: "table_name,id" }
+        );
+      if (error) throw new Error(error.message);
+    } else if (w.op === "delete") {
+      const { error } = await sb()
+        .from(APP_DATA_TABLE)
+        .delete()
+        .eq("table_name", w.table)
+        .eq("id", w.recordId);
+      if (error) throw new Error(error.message);
+    }
+    return true;
+  } catch (err) {
+    console.warn("[productionDb] replay failed:", w.table, w.recordId, w.op, err);
+    return false;
+  }
+}
+
+let draining = false;
+
+/**
+ * Drain the offline queue against Supabase in enqueue order. Idempotent and
+ * safe to call repeatedly (online events, focus, timer). Returns the number
+ * of writes successfully replayed in this drain.
+ */
+export async function flushPendingWrites(): Promise<number> {
+  if (typeof window === "undefined") return 0;
+  if (!isOnline())                  return 0;
+  if (draining)                     return 0;
+
+  draining = true;
+  let replayed = 0;
+  try {
+    const queued = await getQueuedWrites();
+    for (const w of queued) {
+      const success = await replayWrite(w);
+      if (success) {
+        await dequeueWrite(w.id);
+        replayed++;
+      } else {
+        // Bump attempt counter, keep in queue, stop draining for now so we
+        // don't hammer a broken backend. Next online/focus tick will retry.
+        await updateQueuedWrite({ ...w, attempts: w.attempts + 1, lastError: "replay failed" });
+        break;
+      }
+    }
+  } finally {
+    draining = false;
+  }
+  if (replayed > 0) console.log(`[productionDb] flushed ${replayed} queued write${replayed !== 1 ? "s" : ""}`);
+  return replayed;
 }
 
 // ── Generic CRUD (drop-in for adminDb.ts) ───────────────────────────────────
@@ -240,6 +350,54 @@ export async function seedEmployeesData(): Promise<void> {
 
 export async function getAllEmployees(): Promise<unknown[]> {
   return sbGetAll<unknown>("employees");
+}
+
+// ── Position ID backfill ────────────────────────────────────────────────────
+// Pull ADP position IDs into existing employee records whose employeeNumber
+// is missing or stale. Idempotent and bandwidth-light — pushes only changed
+// rows. A localStorage flag prevents re-running once everyone is patched.
+const POSITION_ID_BACKFILL_KEY = "integrity_position_id_backfill_v1";
+
+export async function backfillEmployeePositionIds(): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (localStorage.getItem(POSITION_ID_BACKFILL_KEY)) return;
+  if (!isOnline()) return;
+
+  const { POSITION_IDS_BY_NAME } = await import("@/lib/positionIds");
+  const employees = await sbGetAll<{ id: string; name?: string; employeeNumber?: string }>("employees");
+  if (employees.length === 0) return;
+
+  const toUpdate: typeof employees = [];
+  for (const e of employees) {
+    if (!e?.name) continue;
+    const correct = POSITION_IDS_BY_NAME[e.name];
+    if (!correct) continue;
+    if (e.employeeNumber === correct) continue;
+    toUpdate.push({ ...e, employeeNumber: correct });
+  }
+  if (toUpdate.length === 0) {
+    localStorage.setItem(POSITION_ID_BACKFILL_KEY, "1");
+    return;
+  }
+
+  const rows = toUpdate.map(e => ({
+    table_name: "employees",
+    id: e.id,
+    data: e,
+    updated_at: new Date().toISOString(),
+  }));
+  const { error } = await sb()
+    .from(APP_DATA_TABLE)
+    .upsert(rows, { onConflict: "table_name,id" });
+  if (error) {
+    console.error("[productionDb] position-id backfill failed:", error.message);
+    return; // leave flag unset so we retry next load
+  }
+  // Refresh the local read cache too.
+  for (const e of toUpdate) await cacheRecord("employees", e);
+
+  localStorage.setItem(POSITION_ID_BACKFILL_KEY, "1");
+  console.log(`[productionDb] backfilled position IDs on ${toUpdate.length} employee${toUpdate.length !== 1 ? "s" : ""}`);
 }
 
 // ── IndexedDB → Supabase migration ─────────────────────────────────────────
