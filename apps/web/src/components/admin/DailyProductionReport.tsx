@@ -1947,17 +1947,21 @@ ${blockSections}
     return [...map.values()].sort((a, b) => b.totalTrees - a.totalTrees);
   }, [filtered]);
 
-  // YTD hours per employee — all entries in the current calendar year, unaffected by date filter
+  // YTD hours per employee — cumulative from Jan 1 of the report year through
+  // the report's dateTo (inclusive). Caps at dateTo so a back-dated payroll
+  // run doesn't pick up hours from later periods that haven't been paid yet.
   const ytdHours = useMemo(() => {
-    const year = new Date().getFullYear().toString();
+    if (!dateTo) return new Map<string, number>();
+    const year = dateTo.slice(0, 4);
+    const yearStart = `${year}-01-01`;
     const map = new Map<string, number>();
     for (const e of entries) {
-      if (!e.date.startsWith(year)) continue;
+      if (e.date < yearStart || e.date > dateTo) continue;
       const key = e.employeeId || e.employeeName;
       map.set(key, (map.get(key) ?? 0) + e.hoursWorked);
     }
     return map;
-  }, [entries]);
+  }, [entries, dateTo]);
 
   // Previous 4-week period data — used to compute avg hourly wage for overtime pay calculation.
   // "Previous 4-week period" = the 28 days immediately before dateFrom.
