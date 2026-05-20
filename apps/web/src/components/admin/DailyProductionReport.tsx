@@ -8147,9 +8147,7 @@ ${earningsSection}
 <div class="section-label">Deduction Waterfall</div>
 <table>
   <tbody>
-    <tr><td style="padding:6px 10px;font-weight:600">Piece-Rate / Base Earnings</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.earnings)}</td></tr>
-    ${r.type === "planter" ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Vacation Pay (4%)</td><td style="padding:6px 10px;text-align:right;color:#6b7280">+${fmtC(r.vacPay)}</td></tr>
-    <tr><td style="padding:6px 10px;font-weight:600">Total w/ Vac Pay</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.totalWithVac)}</td></tr>` : ""}
+    <tr><td style="padding:6px 10px;font-weight:600">${r.type === "planter" ? "Piece-Rate Earnings w/ Vacation Pay" : "Base Earnings"}</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.type === "planter" ? r.totalWithVac : r.earnings)}</td></tr>
     ${r.topUp > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Min. Wage Top-Up (ON $${MIN_WAGE.toFixed(2)}/h floor)</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(r.topUp)}</td></tr>` : ""}
     ${r.campCosts > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Camp Costs</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.campCosts)}</td></tr>` : ""}
     ${r.equipDeduction > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Equipment Deduction</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.equipDeduction)}</td></tr>` : ""}
@@ -8265,9 +8263,18 @@ ${dailySection}
                   <div className="border border-gray-200 rounded-xl overflow-hidden">
                     <table className="w-full text-xs">
                       <tbody className="divide-y divide-gray-100">
-                        <tr><td className="px-4 py-2 text-gray-700 font-medium">{r.type === "planter" ? "Piece-Rate Earnings" : r.type === "crew" ? `Crew Boss Earnings (${fmt(r.crewTrees ?? 0)} trees × $0.02)` : `${r.rateType === "hourly" ? "Hourly" : "Day Rate"} Earnings`}</td><td className="px-4 py-2 text-right font-semibold tabular-nums">{fmtC(r.earnings)}</td></tr>
-                        {r.type === "planter" && r.vacPay > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">+ Vacation Pay (4%)</td><td className="px-4 py-2 text-right text-gray-500 tabular-nums">+{fmtC(r.vacPay)}</td></tr>}
-                        {r.type === "planter" && <tr><td className="px-4 py-2 text-gray-700 font-medium">Total w/ Vac Pay</td><td className="px-4 py-2 text-right font-semibold tabular-nums">{fmtC(r.totalWithVac)}</td></tr>}
+                        <tr>
+                          <td className="px-4 py-2 text-gray-700 font-medium">
+                            {r.type === "planter"
+                              ? "Piece-Rate Earnings w/ Vacation Pay"
+                              : r.type === "crew"
+                                ? `Crew Boss Earnings (${fmt(r.crewTrees ?? 0)} trees × $0.02)`
+                                : `${r.rateType === "hourly" ? "Hourly" : "Day Rate"} Earnings`}
+                          </td>
+                          <td className="px-4 py-2 text-right font-semibold tabular-nums">
+                            {fmtC(r.type === "planter" ? r.totalWithVac : r.earnings)}
+                          </td>
+                        </tr>
                         {r.topUp > 0 && <tr className="bg-emerald-50"><td className="px-4 py-2 text-emerald-700 pl-8 text-[11px]">+ Min. Wage Top-Up (ON ${MIN_WAGE.toFixed(2)}/h floor)</td><td className="px-4 py-2 text-right font-semibold text-emerald-700 tabular-nums">+{fmtC(r.topUp)}</td></tr>}
                         {r.campCosts > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Camp Costs</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.campCosts)}</td></tr>}
                         {r.equipDeduction > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Equipment Deduction</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.equipDeduction)}</td></tr>}
