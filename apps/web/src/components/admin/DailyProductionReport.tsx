@@ -779,13 +779,15 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const equip  = p(d.equipDeduction);
       const other  = p(d.other);
       const topUp  = calcTopUp(pl.totalWithVac, pl.totalHours);
-      const gross  = pl.totalWithVac + topUp - camp - equip - other;
+      // splitBase = gross EARNINGS (before camp/equip/other). 25/75 allocation runs on this.
+      const splitBase = pl.totalWithVac + topUp;
+      const gross  = splitBase - camp - equip - other; // taxable (CPP/EI/tax base)
       const cpp    = gross > 0 ? gross * 0.0595 : 0;
       const ei     = gross > 0 ? gross * 0.0166 : 0;
       const tax    = p(d.incomeTax);
       const addl   = p(d.additionalEarnings);
       const net    = gross + addl - cpp - ei - tax;
-      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip, pl.totalHours);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, pl.totalHours);
     }
 
     // Crew Bosses
@@ -799,13 +801,14 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const other    = p(d.other);
       const hours    = p(d.hours);
       const topUp    = calcTopUp(earnings, hours);
-      const gross    = earnings + topUp - camp - equip - other;
+      const splitBase = earnings + topUp;
+      const gross    = splitBase - camp - equip - other;
       const cpp      = gross > 0 ? gross * 0.0595 : 0;
       const ei       = gross > 0 ? gross * 0.0166 : 0;
       const tax      = p(d.incomeTax);
       const addl     = p(d.additionalEarnings);
       const net      = gross + addl - cpp - ei - tax;
-      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip, hours);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, hours);
     }
 
     // Hourly / Day Rate
@@ -818,13 +821,14 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const other   = p(emp.other);
       const hrs     = emp.rateType === "hourly" ? p(emp.quantity) : p(emp.hours);
       const topUp   = calcTopUp(earnings, hrs);
-      const gross   = earnings + topUp - camp - equip - other;
+      const splitBase = earnings + topUp;
+      const gross   = splitBase - camp - equip - other;
       const cpp     = gross > 0 ? gross * 0.0595 : 0;
       const ei      = gross > 0 ? gross * 0.0166 : 0;
       const tax     = p(emp.incomeTax);
       const addl    = p(emp.additionalEarnings);
       const net     = gross + addl - cpp - ei - tax;
-      addEmployee(empId, gross * 0.75, gross * 0.25, camp, equip, hrs);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, hrs);
     }
 
     downloadCSV(rows, `ADP-payroll-${dateFrom}-to-${dateTo}.csv`);
@@ -5486,7 +5490,9 @@ ${blockSections}
                             const hourlyEarned = hours > 0 ? p.totalWithVac / hours : null;
                             const topUp  = calcTopUp(p.totalWithVac, hours);
                             // Top-up is part of gross taxable pay, so CPP/EI/tax all run on it.
-                            const gross  = p.totalWithVac + topUp - camp - equip - other;
+                            // splitBase = gross EARNINGS (before camp/equip/other). 25/75 split runs on this.
+                            const splitBase = p.totalWithVac + topUp;
+                            const gross  = splitBase - camp - equip - other;
                             const ytd    = ytdHours.get(empKey) ?? ytdHours.get(p.name) ?? 0;
                             // Overtime: >178h in 4-week period @ 1.5× prev-period avg hourly
                             const OT_THRESHOLD = 178;
@@ -5623,10 +5629,10 @@ ${blockSections}
                                 </td>
                                 {/* Allocation columns */}
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                                  {fmtC(gross * 0.25)}
+                                  {fmtC(splitBase * 0.25)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                                  {fmtC(gross * 0.75)}
+                                  {fmtC(splitBase * 0.75)}
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <button
@@ -5651,7 +5657,7 @@ ${blockSections}
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
                                         cpp, ei, incomeTax: tax, net,
-                                        special: gross * 0.25, regular: gross * 0.75,
+                                        special: splitBase * 0.25, regular: splitBase * 0.75,
                                         additionalEarnings: addl, notes: d.notes,
                                       });
                                     }}
@@ -5810,7 +5816,8 @@ ${blockSections}
                             const hours        = parseNum(d.hours);
                             const hourlyEarned = hours > 0 ? earnings / hours : null;
                             const topUp        = calcTopUp(earnings, hours);
-                            const gross        = totalWithVac + topUp - camp - equip - other;
+                            const splitBase    = totalWithVac + topUp;
+                            const gross        = splitBase - camp - equip - other;
                             const crewEmp      = employees.find(e => e.name === c.crew);
                             const crewKey      = crewEmp?.id ?? c.crew;
                             const ytd          = ytdHours.get(crewKey) ?? ytdHours.get(c.crew) ?? 0;
@@ -5915,10 +5922,10 @@ ${blockSections}
                                   {fmtC(net)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                                  {fmtC(gross * 0.25)}
+                                  {fmtC(splitBase * 0.25)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                                  {fmtC(gross * 0.75)}
+                                  {fmtC(splitBase * 0.75)}
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <button
@@ -5936,7 +5943,7 @@ ${blockSections}
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
                                         cpp, ei, incomeTax: tax, net,
-                                        special: gross * 0.25, regular: gross * 0.75,
+                                        special: splitBase * 0.25, regular: splitBase * 0.75,
                                         additionalEarnings: addl, notes: d.notes,
                                       });
                                     }}
@@ -6063,7 +6070,8 @@ ${blockSections}
                         const hours    = emp.rateType === "hourly" ? parseNum(emp.quantity) : parseNum(emp.hours);
                         const hourlyEarned = hours > 0 ? earnings / hours : null;
                         const topUp    = calcTopUp(earnings, hours);
-                        const gross    = earnings + topUp - camp - equip - other;
+                        const splitBase = earnings + topUp;
+                        const gross    = splitBase - camp - equip - other;
                         // Overtime: >178h/4-wk @ 1.5× avg hourly (use entered rate as avg for hourly; day-rate uses gross/hours)
                         const OT_THRESHOLD  = 178;
                         const otHours       = Math.max(0, hours - OT_THRESHOLD);
@@ -6189,10 +6197,10 @@ ${blockSections}
                               {fmtC(net)}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                              {fmtC(gross * 0.25)}
+                              {fmtC(splitBase * 0.25)}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                              {fmtC(gross * 0.75)}
+                              {fmtC(splitBase * 0.75)}
                             </td>
                             <td className="px-2 py-1.5 text-center">
                               <button
@@ -6211,7 +6219,7 @@ ${blockSections}
                                     hours, hourlyEarned, topUp, ytd: 0,
                                     otHours, otPay, prevAvgHourly,
                                     cpp, ei, incomeTax: tax, net,
-                                    special: gross * 0.25, regular: gross * 0.75,
+                                    special: splitBase * 0.25, regular: splitBase * 0.75,
                                     additionalEarnings: addl, notes: emp.notes,
                                   });
                                 }}
@@ -8186,7 +8194,7 @@ ${earningsSection}
 <table><tbody>
   <tr><td style="padding:6px 10px">25% Special Worksite Allowance</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.special)}</td></tr>
   <tr><td style="padding:6px 10px">75% Regular Employment Income</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.regular)}</td></tr>
-  <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:6px 10px">Gross Taxable</td><td style="padding:6px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
+  <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:6px 10px">Gross Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.special + r.regular)}</td></tr>
 </tbody></table>
 
 ${dailySection}
@@ -8336,7 +8344,7 @@ ${dailySection}
                       <tbody className="divide-y divide-gray-100">
                         <tr><td className="px-4 py-2.5 text-gray-600">25% Special Worksite Allowance</td><td className="px-4 py-2.5 text-right font-semibold tabular-nums">{fmtC(r.special)}</td></tr>
                         <tr><td className="px-4 py-2.5 text-gray-600">75% Regular Employment Income</td><td className="px-4 py-2.5 text-right font-semibold tabular-nums">{fmtC(r.regular)}</td></tr>
-                        <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Gross Taxable</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.gross)}</td></tr>
+                        <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Gross Earnings</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.special + r.regular)}</td></tr>
                       </tbody>
                     </table>
                   </div>
