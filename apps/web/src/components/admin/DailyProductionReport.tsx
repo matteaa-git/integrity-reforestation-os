@@ -310,7 +310,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     // Earnings
     totalTrees: number; crewTrees?: number; planterCount?: number;
     earnings: number; vacPay: number; totalWithVac: number; days: number;
-    speciesRows: { code: string; species: string; trees: number; earnings: number; ratePerTree: number }[];
+    speciesRows: { block: string; code: string; species: string; trees: number; earnings: number; ratePerTree: number }[];
     dailyLog: { date: string; block: string; project: string; trees: number; hours: number; earnings: number }[];
     // Hourly/crew-boss specific
     rateType?: string; rate?: number; quantity?: number;
@@ -1917,7 +1917,10 @@ ${blockSections}
   const planterSummary = useMemo(() => {
     const map = new Map<string, {
       name: string; totalTrees: number; totalEarnings: number; totalWithVac: number; totalHours: number; overtimeHours: number;
-      days: Set<string>; speciesMap: Map<string, { code: string; trees: number; earnings: number }>;
+      days: Set<string>;
+      // Per-planter breakdown keyed by `${block}|${species}` so the payroll
+      // statement can show which block each tree count belongs to.
+      speciesMap: Map<string, { block: string; species: string; code: string; trees: number; earnings: number }>;
     }>();
     for (const e of filtered) {
       const key = e.employeeId || e.employeeName;
@@ -1929,10 +1932,12 @@ ${blockSections}
       rec.totalHours    += e.hoursWorked;
       rec.overtimeHours += Math.max(0, e.hoursWorked - 8);
       rec.days.add(e.date);
+      const block = e.block || "(No Block)";
       for (const l of e.production) {
-        const s = rec.speciesMap.get(l.species) ?? { code: l.code, trees: 0, earnings: 0 };
+        const k = `${block}|${l.species}`;
+        const s = rec.speciesMap.get(k) ?? { block, species: l.species, code: l.code, trees: 0, earnings: 0 };
         s.trees += l.trees; s.earnings += l.earnings;
-        rec.speciesMap.set(l.species, s);
+        rec.speciesMap.set(k, s);
       }
     }
     return [...map.values()].sort((a, b) => b.totalTrees - a.totalTrees);
@@ -5496,13 +5501,14 @@ ${blockSections}
                             const net    = gross + addl - cpp - ei - tax;
                             const avgDay = p.days.size > 0 ? Math.round(p.totalTrees / p.days.size) : 0;
                             const isExpanded = expandedPlanters.has(p.name);
-                            const speciesRows = [...p.speciesMap.entries()].map(([species, s]) => ({
-                              species,
+                            const speciesRows = [...p.speciesMap.values()].map(s => ({
+                              block: s.block,
+                              species: s.species,
                               code: s.code,
                               trees: s.trees,
                               earnings: s.earnings,
                               ratePerTree: s.trees > 0 ? s.earnings / s.trees : 0,
-                            })).sort((a, b) => b.trees - a.trees);
+                            })).sort((a, b) => a.block.localeCompare(b.block) || b.trees - a.trees);
 
                             function toggleExpand() {
                               setExpandedPlanters(prev => {
@@ -5639,7 +5645,7 @@ ${blockSections}
                                         totalTrees: p.totalTrees, earnings: p.totalEarnings,
                                         vacPay: p.totalWithVac - p.totalEarnings,
                                         totalWithVac: p.totalWithVac, days: p.days.size,
-                                        speciesRows: speciesRows.map(s => ({ code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree })),
+                                        speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree })),
                                         dailyLog: dailyLogRows,
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
@@ -8031,13 +8037,14 @@ ${blockSections}
           if (!w) return;
 
           const earningsSection = r.type === "planter"
-            ? `<div class="section-label">Species Earnings Breakdown</div>
+            ? `<div class="section-label">Breakdown</div>
                <table>
                  <thead><tr>
-                   <th style="${thS}">Code</th><th style="${thS}">Species</th>
+                   <th style="${thS}">Block</th><th style="${thS}">Code</th><th style="${thS}">Species</th>
                    <th style="${thR}">Trees</th><th style="${thR}">Rate/Tree</th><th style="${thR}">Earnings</th>
                  </tr></thead>
                  <tbody>${r.speciesRows.map(s => `<tr>
+                   <td style="padding:6px 10px;color:#374151">${s.block}</td>
                    <td style="padding:6px 10px;font-family:monospace;font-weight:700;color:#374151">${s.code}</td>
                    <td style="padding:6px 10px">${s.species}</td>
                    <td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(s.trees)}</td>
@@ -8045,7 +8052,7 @@ ${blockSections}
                    <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(s.earnings)}</td>
                  </tr>`).join("")}</tbody>
                  <tfoot><tr style="background:#f9fafb;border-top:2px solid #d1d5db">
-                   <td colspan="2" style="padding:6px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#6b7280">Total</td>
+                   <td colspan="3" style="padding:6px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#6b7280">Total</td>
                    <td style="padding:6px 10px;text-align:right;font-weight:700">${fmt(r.totalTrees)}</td>
                    <td></td>
                    <td style="padding:6px 10px;text-align:right;font-weight:700">${fmtC(r.earnings)}</td>
@@ -8335,18 +8342,19 @@ ${dailySection}
                   </div>
                 </div>
 
-                {/* Species breakdown (planters only) */}
+                {/* Breakdown (planters only) — grouped by block + species */}
                 {r.type === "planter" && r.speciesRows.length > 0 && (
                   <div>
-                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Species Breakdown</div>
+                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Breakdown</div>
                     <div className="border border-gray-200 rounded-xl overflow-hidden">
                       <table className="w-full text-xs">
                         <thead><tr className="border-b border-gray-200 bg-gray-50">
-                          {["Code","Species","Trees","$/Tree","Earnings"].map(h => <th key={h} className="px-3 py-2 text-[9px] uppercase tracking-widest font-semibold text-gray-400 text-right first:text-left">{h}</th>)}
+                          {["Block","Code","Species","Trees","$/Tree","Earnings"].map(h => <th key={h} className="px-3 py-2 text-[9px] uppercase tracking-widest font-semibold text-gray-400 text-right first:text-left">{h}</th>)}
                         </tr></thead>
                         <tbody className="divide-y divide-gray-100">
-                          {r.speciesRows.map(s => (
-                            <tr key={s.code}>
+                          {r.speciesRows.map((s, i) => (
+                            <tr key={`${s.block}|${s.code}|${i}`}>
+                              <td className="px-3 py-2 text-gray-700">{s.block}</td>
                               <td className="px-3 py-2 font-mono font-bold text-gray-700">{s.code}</td>
                               <td className="px-3 py-2 text-gray-600">{s.species}</td>
                               <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(s.trees)}</td>
