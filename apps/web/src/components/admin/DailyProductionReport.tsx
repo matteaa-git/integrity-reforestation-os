@@ -8268,26 +8268,33 @@ ${dailySection}
               logging: false,
             });
             const pdf = new jsPDF({ unit: "pt", format: "letter" }); // 612 × 792 pt
-            const pageW   = pdf.internal.pageSize.getWidth();
-            const pageH   = pdf.internal.pageSize.getHeight();
-            const margin  = 24;
-            const imgW    = pageW  - margin * 2;
-            const imgH    = (canvas.height * imgW) / canvas.width;
-            const imgData = canvas.toDataURL("image/png");
+            const pageW  = pdf.internal.pageSize.getWidth();
+            const pageH  = pdf.internal.pageSize.getHeight();
+            const margin = 24;
+            const imgW   = pageW - margin * 2;
+            const contentH_pt = pageH - margin * 2;
+            const pxPerPt   = canvas.width / imgW;
+            const sliceH_px = Math.floor(contentH_pt * pxPerPt);
 
-            // Paginate: single tall image is positioned with a negative y offset
-            // on subsequent pages so each shows the next slice. addPage() adds
-            // blank pages we then draw into.
-            let yOffset = margin;
-            let remaining = imgH;
-            const usable  = pageH - margin * 2;
-            pdf.addImage(imgData, "PNG", margin, yOffset, imgW, imgH);
-            remaining -= usable;
-            while (remaining > 0) {
-              pdf.addPage();
-              yOffset = margin - (imgH - remaining);
-              pdf.addImage(imgData, "PNG", margin, yOffset, imgW, imgH);
-              remaining -= usable;
+            // Slice the tall canvas vertically and put each slice on its own
+            // page. Avoids the negative-y-offset overlap that was duplicating
+            // a strip of content between adjacent pages.
+            let sliceTop = 0;
+            let isFirstPage = true;
+            while (sliceTop < canvas.height) {
+              if (!isFirstPage) pdf.addPage();
+              isFirstPage = false;
+              const sliceH = Math.min(sliceH_px, canvas.height - sliceTop);
+              const sliceCanvas = document.createElement("canvas");
+              sliceCanvas.width  = canvas.width;
+              sliceCanvas.height = sliceH;
+              const sctx = sliceCanvas.getContext("2d");
+              if (!sctx) break;
+              sctx.drawImage(canvas, 0, sliceTop, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+              const sliceData = sliceCanvas.toDataURL("image/png");
+              const sliceH_pt = (sliceH * imgW) / canvas.width;
+              pdf.addImage(sliceData, "PNG", margin, margin, imgW, sliceH_pt);
+              sliceTop += sliceH;
             }
 
             const safeName   = r.name.replace(/[^\w-]+/g, "_");
