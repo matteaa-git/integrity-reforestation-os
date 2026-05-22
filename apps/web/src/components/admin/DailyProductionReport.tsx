@@ -5638,9 +5638,31 @@ ${blockSections}
                                   <button
                                     onClick={() => {
                                       const planterEntries = filtered.filter(e => e.employeeName === p.name || e.employeeId === empKey);
-                                      const dailyLogRows = [...planterEntries].sort((a,b) => a.date.localeCompare(b.date)).map(e => ({
-                                        date: e.date, block: e.block, project: e.project, trees: e.totalTrees, hours: e.hoursWorked, earnings: e.totalEarnings,
-                                      }));
+                                      // Collapse multiple entries on the same date (e.g. different blocks
+                                      // or species sessions) into a single row so the Trees column shows
+                                      // the day's combined total.
+                                      const dailyLogRows = (() => {
+                                        const byDate = new Map<string, { date: string; blocks: Set<string>; projects: Set<string>; trees: number; hours: number; earnings: number }>();
+                                        for (const e of planterEntries) {
+                                          const rec = byDate.get(e.date) ?? { date: e.date, blocks: new Set(), projects: new Set(), trees: 0, hours: 0, earnings: 0 };
+                                          if (e.block)   rec.blocks.add(e.block);
+                                          if (e.project) rec.projects.add(e.project);
+                                          rec.trees    += e.totalTrees;
+                                          rec.hours    += e.hoursWorked;
+                                          rec.earnings += e.totalEarnings;
+                                          byDate.set(e.date, rec);
+                                        }
+                                        return [...byDate.values()]
+                                          .sort((a, b) => a.date.localeCompare(b.date))
+                                          .map(r => ({
+                                            date: r.date,
+                                            block: [...r.blocks].join(", "),
+                                            project: [...r.projects].join(", "),
+                                            trees: r.trees,
+                                            hours: r.hours,
+                                            earnings: r.earnings,
+                                          }));
+                                      })();
                                       const empObj = employees.find(e => e.name === p.name);
                                       setPayrollReport({
                                         type: "planter", name: p.name,
