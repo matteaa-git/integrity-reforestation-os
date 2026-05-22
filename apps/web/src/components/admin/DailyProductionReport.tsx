@@ -1936,9 +1936,15 @@ ${blockSections}
       rec.totalHours    += e.hoursWorked;
       rec.overtimeHours += Math.max(0, e.hoursWorked - 8);
       rec.days.add(e.date);
-      const block = e.block || "(No Block)";
+      const block     = e.block || "(No Block)";
+      // Key by speciesId, not the display name — production entries sometimes
+      // have inconsistent capitalisation/whitespace on the species text (e.g.
+      // "White pine" vs "White Pine") and we don't want that splitting one
+      // species into multiple breakdown rows. Block goes through trim+lower
+      // for the same reason.
+      const blockKey  = block.trim().toLowerCase();
       for (const l of e.production) {
-        const k = `${block}|${l.species}`;
+        const k = `${blockKey}|${l.speciesId}`;
         const s = rec.speciesMap.get(k) ?? { block, species: l.species, code: l.code, trees: 0, earnings: 0 };
         s.trees += l.trees; s.earnings += l.earnings;
         rec.speciesMap.set(k, s);
