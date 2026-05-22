@@ -8149,14 +8149,14 @@ ${blockSections}
   <div style="text-align:right">
     <div style="font-size:9px;text-transform:uppercase;letter-spacing:.15em;font-weight:700;color:#9ca3af">Integrity Reforestation</div>
     <div style="font-size:10px;color:#9ca3af;margin-top:3px">Generated ${new Date().toLocaleDateString("en-CA")}</div>
-    <div style="margin-top:8px;font-size:28px;font-weight:900;color:#111827">${fmtC(r.type === "planter" ? r.gross : r.net)}</div>
+    <div style="margin-top:8px;font-size:28px;font-weight:900;color:#111827">${fmtC(r.type === "planter" ? r.totalWithVac : r.net)}</div>
     <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:#9ca3af">${r.type === "planter" ? "Gross" : "Net Pay"}</div>
   </div>
 </div>
 
 <div class="kpi-grid">
   ${r.type === "planter" ? `
-    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.gross)}</div></div>
+    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.totalWithVac)}</div></div>
     <div class="kpi"><div class="kpi-label">Trees</div><div class="kpi-value">${fmt(r.totalTrees)}</div></div>
     <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
   ` : `
@@ -8181,8 +8181,8 @@ ${earningsSection}
     ${r.otPay != null && r.otPay > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Overtime Pay (${r.otHours}h × 1.5×)</td><td style="padding:6px 10px;text-align:right;color:#d97706">+${fmtC(r.otPay)}</td></tr>` : ""}
     ${r.type !== "planter" ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
     <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">EI (1.66%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.ei)}</td></tr>` : ""}
-    ${r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
-    <tr style="font-weight:900;font-size:14px;border-top:2px solid #111827;background:#f9fafb"><td style="padding:10px">Net Pay</td><td style="padding:10px;text-align:right">${fmtC(r.type === "planter" ? r.gross + r.additionalEarnings - r.incomeTax : r.net)}</td></tr>
+    ${r.type !== "planter" && r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
+    <tr style="font-weight:900;font-size:14px;border-top:2px solid #111827;background:#f9fafb"><td style="padding:10px">${r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td style="padding:10px;text-align:right">${fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.net)}</td></tr>
   </tbody>
 </table>
 
@@ -8262,7 +8262,7 @@ ${dailySection}
                   <div className="text-right">
                     <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400">Integrity Reforestation</div>
                     <div className="text-[10px] text-gray-400 mt-0.5">{new Date().toLocaleDateString("en-CA")}</div>
-                    <div className="text-3xl font-black text-gray-900 mt-2">{fmtC(r.type === "planter" ? r.gross : r.net)}</div>
+                    <div className="text-3xl font-black text-gray-900 mt-2">{fmtC(r.type === "planter" ? r.totalWithVac : r.net)}</div>
                     <div className="text-[9px] uppercase tracking-[.1em] font-bold text-gray-400">{r.type === "planter" ? "Gross" : "Net Pay"}</div>
                   </div>
                 </div>
@@ -8271,7 +8271,7 @@ ${dailySection}
                 <div className={`grid gap-3 ${r.type === "planter" ? "grid-cols-3" : "grid-cols-4"}`}>
                   {(r.type === "planter"
                     ? [
-                        { label: "Gross", value: fmtC(r.gross), accent: true },
+                        { label: "Gross", value: fmtC(r.totalWithVac), accent: true },
                         { label: "Trees", value: fmt(r.totalTrees) },
                         { label: "Hours", value: r.hours > 0 ? `${r.hours}h` : "—" },
                       ]
@@ -8315,8 +8315,8 @@ ${dailySection}
                         {r.otPay != null && r.otPay > 0 && <tr className="bg-amber-50"><td className="px-4 py-2 text-amber-700 pl-8 text-[11px]">+ Overtime Pay ({r.otHours}h × 1.5 × ${r.prevAvgHourly?.toFixed(2) ?? "—"}/h)</td><td className="px-4 py-2 text-right font-semibold text-amber-700 tabular-nums">+{fmtC(r.otPay)}</td></tr>}
                         {r.type !== "planter" && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− CPP (5.95%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.cpp)}</td></tr>}
                         {r.type !== "planter" && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− EI (1.66%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.ei)}</td></tr>}
-                        {r.incomeTax > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Income Tax</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.incomeTax)}</td></tr>}
-                        <tr className="border-t-2 border-gray-900"><td className="px-4 py-3 font-black text-gray-900 text-sm">Net Pay</td><td className="px-4 py-3 text-right font-black text-gray-900 text-sm tabular-nums">{fmtC(r.type === "planter" ? r.gross + r.additionalEarnings - r.incomeTax : r.net)}</td></tr>
+                        {r.type !== "planter" && r.incomeTax > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Income Tax</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.incomeTax)}</td></tr>}
+                        <tr className="border-t-2 border-gray-900"><td className="px-4 py-3 font-black text-gray-900 text-sm">{r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td className="px-4 py-3 text-right font-black text-gray-900 text-sm tabular-nums">{fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.net)}</td></tr>
                       </tbody>
                     </table>
                   </div>
