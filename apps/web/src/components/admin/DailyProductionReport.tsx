@@ -8040,9 +8040,7 @@ ${blockSections}
         const thS = `padding:6px 10px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#9ca3af;border-bottom:1px solid #e5e7eb;background:#f9fafb`;
         const thR = thS + ";text-align:right";
 
-        function printPayrollReport() {
-          const w = window.open("", "_blank");
-          if (!w) return;
+        async function printPayrollReport() {
 
           const earningsSection = r.type === "planter"
             ? `<div class="section-label">Breakdown</div>
@@ -8106,7 +8104,7 @@ ${blockSections}
                </table>`
             : "";
 
-          w.document.write(`<!DOCTYPE html><html><head>
+          const docHtml = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
 <title>Payroll Report – ${r.name}</title>
 <style>
@@ -8220,10 +8218,65 @@ ${dailySection}
   <span>Integrity Reforestation · Payroll Statement</span>
   <span>${r.name} · ${r.period}</span>
 </div>
-</body></html>`);
-          w.document.close();
-          w.focus();
-          setTimeout(() => w.print(), 500);
+</body></html>`;
+
+          // Render off-screen, snapshot to canvas, paginate into a downloadable PDF.
+          // No print dialog — the file lands directly in Downloads.
+          const iframe = document.createElement("iframe");
+          iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:860px;height:1200px;border:0;visibility:hidden";
+          document.body.appendChild(iframe);
+          const idoc = iframe.contentDocument;
+          if (!idoc) { document.body.removeChild(iframe); return; }
+          idoc.open();
+          idoc.write(docHtml);
+          idoc.close();
+
+          // Wait for fonts/styles to settle.
+          await new Promise(res => setTimeout(res, 400));
+
+          try {
+            const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+              import("html2canvas"),
+              import("jspdf"),
+            ]);
+            const canvas = await html2canvas(idoc.body, {
+              scale: 2,
+              backgroundColor: "#ffffff",
+              useCORS: true,
+              logging: false,
+            });
+            const pdf = new jsPDF({ unit: "pt", format: "letter" }); // 612 × 792 pt
+            const pageW   = pdf.internal.pageSize.getWidth();
+            const pageH   = pdf.internal.pageSize.getHeight();
+            const margin  = 24;
+            const imgW    = pageW  - margin * 2;
+            const imgH    = (canvas.height * imgW) / canvas.width;
+            const imgData = canvas.toDataURL("image/png");
+
+            // Paginate: single tall image is positioned with a negative y offset
+            // on subsequent pages so each shows the next slice. addPage() adds
+            // blank pages we then draw into.
+            let yOffset = margin;
+            let remaining = imgH;
+            const usable  = pageH - margin * 2;
+            pdf.addImage(imgData, "PNG", margin, yOffset, imgW, imgH);
+            remaining -= usable;
+            while (remaining > 0) {
+              pdf.addPage();
+              yOffset = margin - (imgH - remaining);
+              pdf.addImage(imgData, "PNG", margin, yOffset, imgW, imgH);
+              remaining -= usable;
+            }
+
+            const safeName   = r.name.replace(/[^\w-]+/g, "_");
+            const safePeriod = r.period.replace(/[^\w-]+/g, "_");
+            pdf.save(`Payroll-${safeName}-${safePeriod}.pdf`);
+          } catch (err) {
+            console.error("[payroll] PDF download failed:", err);
+            alert("Couldn't generate the PDF. Check the console for details.");
+          } finally {
+            document.body.removeChild(iframe);
+          }
         }
 
         return (
@@ -8237,8 +8290,8 @@ ${dailySection}
                   <button
                     onClick={printPayrollReport}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors">
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2m-10 0h8m-8 4h8v-4H6v4z"/></svg>
-                    Print / Save PDF
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+                    Download PDF
                   </button>
                   <button
                     onClick={() => setPayrollReport(null)}
