@@ -2469,6 +2469,10 @@ ${blockSections}
     <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.totalWithVac)}</div></div>
     <div class="kpi"><div class="kpi-label">Trees</div><div class="kpi-value">${fmt(r.totalTrees)}</div></div>
     <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
+  ` : r.type === "crew" ? `
+    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.gross)}</div></div>
+    <div class="kpi"><div class="kpi-label">Earnings</div><div class="kpi-value">${fmtC(r.earnings)}</div></div>
+    <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
   ` : `
     <div class="kpi accent"><div class="kpi-label">Net Pay</div><div class="kpi-value">${fmtC(r.net)}</div></div>
     <div class="kpi"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.gross)}</div></div>
@@ -2489,10 +2493,10 @@ ${earningsSection}
     ${r.other > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Other</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.other)}</td></tr>` : ""}
     <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:8px 10px">Gross Taxable</td><td style="padding:8px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
     ${r.otPay != null && r.otPay > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Overtime Pay (${r.otHours}h × 1.5×)</td><td style="padding:6px 10px;text-align:right;color:#d97706">+${fmtC(r.otPay)}</td></tr>` : ""}
-    ${r.type !== "planter" ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
+    ${(r.type !== "planter" && r.type !== "crew") ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
     <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">EI (1.66%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.ei)}</td></tr>` : ""}
     ${r.type !== "planter" && r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
-    <tr style="font-weight:900;font-size:14px;border-top:2px solid #111827;background:#f9fafb"><td style="padding:10px">${r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td style="padding:10px;text-align:right">${fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.net)}</td></tr>
+    <tr style="font-weight:900;font-size:14px;border-top:2px solid #111827;background:#f9fafb"><td style="padding:10px">${r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td style="padding:10px;text-align:right">${fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.type === "crew" ? r.gross + r.additionalEarnings - r.incomeTax : r.net)}</td></tr>
   </tbody>
 </table>
 
@@ -8420,253 +8424,15 @@ ${dailySection}
       {/* ── Payroll Report Modal ── */}
       {payrollReport && (() => {
         const r = payrollReport;
-        const thS = `padding:6px 10px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#9ca3af;border-bottom:1px solid #e5e7eb;background:#f9fafb`;
-        const thR = thS + ";text-align:right";
-
         async function printPayrollReport() {
-
-          const earningsSection = r.type === "planter"
-            ? `<div class="section-label">Breakdown</div>
-               <table>
-                 <thead><tr>
-                   <th style="${thS}">Block</th><th style="${thS}">Code</th><th style="${thS}">Species</th>
-                   <th style="${thR}">Trees</th><th style="${thR}">Rate/Tree</th><th style="${thR}">Earnings</th>
-                 </tr></thead>
-                 <tbody>${r.speciesRows.map(s => `<tr>
-                   <td style="padding:6px 10px;color:#374151">${s.block}</td>
-                   <td style="padding:6px 10px;font-family:monospace;font-weight:700;color:#374151">${s.code}</td>
-                   <td style="padding:6px 10px">${s.species}</td>
-                   <td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(s.trees)}</td>
-                   <td style="padding:6px 10px;text-align:right;color:#6b7280">$${s.ratePerTree.toFixed(4)}</td>
-                   <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(s.earnings)}</td>
-                 </tr>`).join("")}</tbody>
-                 <tfoot><tr style="background:#f9fafb;border-top:2px solid #d1d5db">
-                   <td colspan="3" style="padding:6px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#6b7280">Total</td>
-                   <td style="padding:6px 10px;text-align:right;font-weight:700">${fmt(r.totalTrees)}</td>
-                   <td></td>
-                   <td style="padding:6px 10px;text-align:right;font-weight:700">${fmtC(r.earnings)}</td>
-                 </tr></tfoot>
-               </table>`
-            : r.type === "crew"
-            ? `<div class="section-label">Crew Boss Earnings</div>
-               <table><tbody>
-                 <tr><td style="padding:6px 10px">Crew trees planted</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(r.crewTrees ?? 0)}</td></tr>
-                 <tr><td style="padding:6px 10px">Planters supervised</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.planterCount ?? 0}</td></tr>
-                 <tr><td style="padding:6px 10px">Rate per tree</td><td style="padding:6px 10px;text-align:right;font-weight:600">$0.0200</td></tr>
-                 <tr style="border-top:2px solid #d1d5db;font-weight:700"><td style="padding:6px 10px">Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td></tr>
-               </tbody></table>`
-            : `<div class="section-label">Earnings</div>
-               <table><tbody>
-                 <tr><td style="padding:6px 10px">Type</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.rateType === "hourly" ? "Hourly" : "Day Rate"}</td></tr>
-                 <tr><td style="padding:6px 10px">Rate</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.rate ?? 0)} ${r.rateType === "hourly" ? "/ hr" : "/ day"}</td></tr>
-                 <tr><td style="padding:6px 10px">${r.rateType === "hourly" ? "Hours" : "Days"}</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.quantity ?? 0}</td></tr>
-                 <tr style="border-top:2px solid #d1d5db;font-weight:700"><td style="padding:6px 10px">Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td></tr>
-               </tbody></table>`;
-
-          const dailySection = r.type === "planter" && r.dailyLog.length > 0
-            ? `<div class="section-label">Daily Production Log</div>
-               <table>
-                 <thead><tr>
-                   <th style="${thS}">Date</th><th style="${thS}">Block</th><th style="${thS}">Project</th>
-                   <th style="${thR}">Trees</th><th style="${thR}">Hours</th><th style="${thR}">Earnings</th>
-                 </tr></thead>
-                 <tbody>${r.dailyLog.map(d => `<tr>
-                   <td style="padding:6px 10px;white-space:nowrap">${d.date}</td>
-                   <td style="padding:6px 10px">${d.block || "—"}</td>
-                   <td style="padding:6px 10px">${d.project || "—"}</td>
-                   <td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(d.trees)}</td>
-                   <td style="padding:6px 10px;text-align:right;color:#6b7280">${d.hours}h</td>
-                   <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(d.earnings)}</td>
-                 </tr>`).join("")}</tbody>
-                 <tfoot><tr style="background:#f9fafb;border-top:2px solid #d1d5db;font-weight:700">
-                   <td colspan="3" style="padding:6px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280">${r.days} day${r.days !== 1 ? "s" : ""}</td>
-                   <td style="padding:6px 10px;text-align:right">${fmt(r.totalTrees)}</td>
-                   <td style="padding:6px 10px;text-align:right;color:#6b7280">—</td>
-                   <td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td>
-                 </tr></tfoot>
-               </table>`
-            : "";
-
-          const docHtml = `<!DOCTYPE html><html><head>
-<meta charset="utf-8"/>
-<title>Payroll Report – ${r.name}</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #111827; background: #fff; padding: 40px 48px; max-width: 860px; margin: 0 auto; }
-  @media print { body { padding: 0; max-width: 100%; } @page { margin: 16mm 14mm; } }
-  .section-label { font-size: 9px; text-transform: uppercase; letter-spacing: .15em; font-weight: 700; color: #9ca3af; margin: 22px 0 8px; }
-  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
-  .kpi { border-radius: 10px; padding: 14px 16px; border: 1px solid #e5e7eb; }
-  .kpi.accent { background: #111827; border-color: #111827; }
-  .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: #9ca3af; margin-bottom: 4px; }
-  .kpi.accent .kpi-label { color: #6b7280; }
-  .kpi-value { font-size: 18px; font-weight: 900; color: #111827; }
-  .kpi.accent .kpi-value { color: #fff; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 24px; }
-  tr:nth-child(even) { background: #f9fafb; }
-  .waterfall-row td:first-child { padding-left: 28px; color: #6b7280; font-size: 11px; }
-  .waterfall-total td { font-weight: 700; border-top: 2px solid #d1d5db; }
-  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-top: 32px; padding-top: 24px; border-top: 1px solid #e5e7eb; }
-  .sig-line { border-bottom: 1px solid #374151; height: 32px; margin-bottom: 6px; }
-  .sig-label { font-size: 9px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; color: #9ca3af; }
-  .footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; font-size: 9px; color: #9ca3af; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; }
-  .badge-warn { background: #fef3c7; color: #92400e; }
-  .badge-ok { background: #d1fae5; color: #065f46; }
-  .badge-ot { background: #fef3c7; color: #92400e; }
-</style>
-</head><body>
-
-<div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:20px;border-bottom:2px solid #111827;margin-bottom:24px">
-  <div>
-    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.2em;font-weight:700;color:#9ca3af;margin-bottom:6px">Payroll Statement</div>
-    <div style="font-size:28px;font-weight:900;letter-spacing:-.5px;color:#111827">${r.name}</div>
-    <div style="margin-top:6px;font-size:12px;color:#6b7280">
-      ${r.role}&nbsp;&nbsp;·&nbsp;&nbsp;Emp. #: <strong style="color:#374151">${r.employeeNumber}</strong>
-      ${r.crewBoss !== "—" ? `&nbsp;&nbsp;·&nbsp;&nbsp;Crew Boss: <strong style="color:#374151">${r.crewBoss}</strong>` : ""}
-    </div>
-    <div style="margin-top:4px;font-size:12px;color:#6b7280">Period: <strong style="color:#374151">${r.period}</strong></div>
-  </div>
-  <div style="text-align:right">
-    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.15em;font-weight:700;color:#9ca3af">Integrity Reforestation</div>
-    <div style="font-size:10px;color:#9ca3af;margin-top:3px">Generated ${new Date().toLocaleDateString("en-CA")}</div>
-    <div style="margin-top:8px;font-size:28px;font-weight:900;color:#111827">${fmtC(r.type === "planter" ? r.totalWithVac : r.net)}</div>
-    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:#9ca3af">${r.type === "planter" ? "Gross" : "Net Pay"}</div>
-  </div>
-</div>
-
-<div class="kpi-grid">
-  ${r.type === "planter" ? `
-    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.totalWithVac)}</div></div>
-    <div class="kpi"><div class="kpi-label">Trees</div><div class="kpi-value">${fmt(r.totalTrees)}</div></div>
-    <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
-  ` : `
-    <div class="kpi accent"><div class="kpi-label">Net Pay</div><div class="kpi-value">${fmtC(r.net)}</div></div>
-    <div class="kpi"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.gross)}</div></div>
-    <div class="kpi"><div class="kpi-label">Earnings</div><div class="kpi-value">${fmtC(r.earnings)}</div></div>
-    <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
-  `}
-</div>
-
-${earningsSection}
-
-<div class="section-label">Deduction Waterfall</div>
-<table>
-  <tbody>
-    <tr><td style="padding:6px 10px;font-weight:600">${r.type === "planter" ? "Piece-Rate Earnings w/ Vacation Pay" : "Base Earnings"}</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.type === "planter" ? r.totalWithVac : r.earnings)}</td></tr>
-    ${r.topUp > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Min. Wage Top-Up (ON $${MIN_WAGE.toFixed(2)}/h floor)</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(r.topUp)}</td></tr>` : ""}
-    ${r.campCosts > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Camp Costs</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.campCosts)}</td></tr>` : ""}
-    ${r.equipDeduction > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Equipment Deduction</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.equipDeduction)}</td></tr>` : ""}
-    ${r.other > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Other</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.other)}</td></tr>` : ""}
-    <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:8px 10px">Gross Taxable</td><td style="padding:8px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
-    ${r.otPay != null && r.otPay > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Overtime Pay (${r.otHours}h × 1.5×)</td><td style="padding:6px 10px;text-align:right;color:#d97706">+${fmtC(r.otPay)}</td></tr>` : ""}
-    ${r.type !== "planter" ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
-    <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">EI (1.66%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.ei)}</td></tr>` : ""}
-    ${r.type !== "planter" && r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
-    <tr style="font-weight:900;font-size:14px;border-top:2px solid #111827;background:#f9fafb"><td style="padding:10px">${r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td style="padding:10px;text-align:right">${fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.net)}</td></tr>
-  </tbody>
-</table>
-
-<div class="section-label">Compliance & Hours</div>
-<table><tbody>
-  <tr><td style="padding:6px 10px">Hours This Period</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.hours > 0 ? r.hours + "h" : "—"}</td></tr>
-  <tr><td style="padding:6px 10px">Hourly Earned (Earnings ÷ Hours)</td><td style="padding:6px 10px;text-align:right;font-weight:600;color:${r.hourlyEarned != null && r.hourlyEarned < 17.20 ? "#dc2626" : "#059669"}">${r.hourlyEarned != null ? "$" + r.hourlyEarned.toFixed(2) + "/h" : "—"} ${r.hourlyEarned != null ? `<span class="badge ${r.hourlyEarned < 17.20 ? "badge-warn" : "badge-ok"}">${r.hourlyEarned < 17.20 ? "Below Min Wage" : "Above Min Wage"}</span>` : ""}</td></tr>
-  ${r.topUp > 0 ? `<tr><td style="padding:6px 10px">Min. Wage Top-Up (ON $17.20/h floor)</td><td style="padding:6px 10px;text-align:right;font-weight:600;color:#dc2626">${fmtC(r.topUp)}</td></tr>` : ""}
-  <tr><td style="padding:6px 10px">Total Hours (YTD)</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.ytd > 0 ? r.ytd + "h" : "—"}</td></tr>
-  ${r.otHours > 0 ? `<tr><td style="padding:6px 10px">Overtime Hours (&gt;178h / 4-wk)</td><td style="padding:6px 10px;text-align:right;font-weight:600;color:#d97706">${r.otHours}h <span class="badge badge-ot">OT</span></td></tr>` : ""}
-  ${r.otPay != null ? `<tr><td style="padding:6px 10px">Overtime Pay (1.5× prev. avg $${r.prevAvgHourly?.toFixed(2) ?? "—"}/h)</td><td style="padding:6px 10px;text-align:right;font-weight:600;color:#d97706">${fmtC(r.otPay)}</td></tr>` : ""}
-</tbody></table>
-
-<div class="section-label">Income Allocation</div>
-<table><tbody>
-  <tr><td style="padding:6px 10px">25% Special Worksite Allowance</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.special)}</td></tr>
-  <tr><td style="padding:6px 10px">75% Regular Employment Income</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.regular)}</td></tr>
-  <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:6px 10px">Gross Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.special + r.regular)}</td></tr>
-</tbody></table>
-
-${dailySection}
-
-<div class="sig-grid">
-  <div>
-    <div class="sig-line"></div>
-    <div class="sig-label">Employee Signature &amp; Date</div>
-  </div>
-  <div>
-    <div class="sig-line"></div>
-    <div class="sig-label">Authorized Signatory &amp; Date</div>
-  </div>
-</div>
-
-<div class="footer">
-  <span>Integrity Reforestation · Payroll Statement</span>
-  <span>${r.name} · ${r.period}</span>
-</div>
-</body></html>`;
-
-          // Render off-screen, snapshot to canvas, paginate into a downloadable PDF.
-          // No print dialog — the file lands directly in Downloads.
-          const iframe = document.createElement("iframe");
-          iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:860px;height:1200px;border:0;visibility:hidden";
-          document.body.appendChild(iframe);
-          const idoc = iframe.contentDocument;
-          if (!idoc) { document.body.removeChild(iframe); return; }
-          idoc.open();
-          idoc.write(docHtml);
-          idoc.close();
-
-          // Wait for fonts/styles to settle.
-          await new Promise(res => setTimeout(res, 400));
-
-          try {
-            const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-              import("html2canvas"),
-              import("jspdf"),
-            ]);
-            const canvas = await html2canvas(idoc.body, {
-              scale: 2,
-              backgroundColor: "#ffffff",
-              useCORS: true,
-              logging: false,
-            });
-            const pdf = new jsPDF({ unit: "pt", format: "letter" }); // 612 × 792 pt
-            const pageW  = pdf.internal.pageSize.getWidth();
-            const pageH  = pdf.internal.pageSize.getHeight();
-            const margin = 24;
-            const imgW   = pageW - margin * 2;
-            const contentH_pt = pageH - margin * 2;
-            const pxPerPt   = canvas.width / imgW;
-            const sliceH_px = Math.floor(contentH_pt * pxPerPt);
-
-            // Slice the tall canvas vertically and put each slice on its own
-            // page. Avoids the negative-y-offset overlap that was duplicating
-            // a strip of content between adjacent pages.
-            let sliceTop = 0;
-            let isFirstPage = true;
-            while (sliceTop < canvas.height) {
-              if (!isFirstPage) pdf.addPage();
-              isFirstPage = false;
-              const sliceH = Math.min(sliceH_px, canvas.height - sliceTop);
-              const sliceCanvas = document.createElement("canvas");
-              sliceCanvas.width  = canvas.width;
-              sliceCanvas.height = sliceH;
-              const sctx = sliceCanvas.getContext("2d");
-              if (!sctx) break;
-              sctx.drawImage(canvas, 0, sliceTop, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-              const sliceData = sliceCanvas.toDataURL("image/png");
-              const sliceH_pt = (sliceH * imgW) / canvas.width;
-              pdf.addImage(sliceData, "PNG", margin, margin, imgW, sliceH_pt);
-              sliceTop += sliceH;
-            }
-
-            const safeName   = r.name.replace(/[^\w-]+/g, "_");
-            const safePeriod = r.period.replace(/[^\w-]+/g, "_");
-            pdf.save(`Payroll-${safeName}-${safePeriod}.pdf`);
-          } catch (err) {
-            console.error("[payroll] PDF download failed:", err);
+          const blob = await renderPayrollPdfBlob(r);
+          if (!blob) {
             alert("Couldn't generate the PDF. Check the console for details.");
-          } finally {
-            document.body.removeChild(iframe);
+            return;
           }
+          const safeName   = r.name.replace(/[^\w-]+/g, "_");
+          const safePeriod = r.period.replace(/[^\w-]+/g, "_");
+          triggerBlobDownload(blob, `Payroll-${safeName}-${safePeriod}.pdf`);
         }
 
         return (
@@ -8711,11 +8477,17 @@ ${dailySection}
                 </div>
 
                 {/* KPIs */}
-                <div className={`grid gap-3 ${r.type === "planter" ? "grid-cols-3" : "grid-cols-4"}`}>
+                <div className={`grid gap-3 ${r.type === "planter" || r.type === "crew" ? "grid-cols-3" : "grid-cols-4"}`}>
                   {(r.type === "planter"
                     ? [
                         { label: "Gross", value: fmtC(r.totalWithVac), accent: true },
                         { label: "Trees", value: fmt(r.totalTrees) },
+                        { label: "Hours", value: r.hours > 0 ? `${r.hours}h` : "—" },
+                      ]
+                    : r.type === "crew"
+                    ? [
+                        { label: "Gross", value: fmtC(r.gross), accent: true },
+                        { label: "Earnings", value: fmtC(r.earnings) },
                         { label: "Hours", value: r.hours > 0 ? `${r.hours}h` : "—" },
                       ]
                     : [
@@ -8756,10 +8528,10 @@ ${dailySection}
                         {r.other > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Other</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.other)}</td></tr>}
                         <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Gross Taxable</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.gross)}</td></tr>
                         {r.otPay != null && r.otPay > 0 && <tr className="bg-amber-50"><td className="px-4 py-2 text-amber-700 pl-8 text-[11px]">+ Overtime Pay ({r.otHours}h × 1.5 × ${r.prevAvgHourly?.toFixed(2) ?? "—"}/h)</td><td className="px-4 py-2 text-right font-semibold text-amber-700 tabular-nums">+{fmtC(r.otPay)}</td></tr>}
-                        {r.type !== "planter" && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− CPP (5.95%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.cpp)}</td></tr>}
-                        {r.type !== "planter" && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− EI (1.66%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.ei)}</td></tr>}
+                        {(r.type !== "planter" && r.type !== "crew") && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− CPP (5.95%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.cpp)}</td></tr>}
+                        {(r.type !== "planter" && r.type !== "crew") && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− EI (1.66%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.ei)}</td></tr>}
                         {r.type !== "planter" && r.incomeTax > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Income Tax</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.incomeTax)}</td></tr>}
-                        <tr className="border-t-2 border-gray-900"><td className="px-4 py-3 font-black text-gray-900 text-sm">{r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td className="px-4 py-3 text-right font-black text-gray-900 text-sm tabular-nums">{fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.net)}</td></tr>
+                        <tr className="border-t-2 border-gray-900"><td className="px-4 py-3 font-black text-gray-900 text-sm">{r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td className="px-4 py-3 text-right font-black text-gray-900 text-sm tabular-nums">{fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.type === "crew" ? r.gross + r.additionalEarnings - r.incomeTax : r.net)}</td></tr>
                       </tbody>
                     </table>
                   </div>
