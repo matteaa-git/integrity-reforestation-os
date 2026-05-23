@@ -2279,6 +2279,349 @@ ${blockSections}
     </div>
   );
 
+  // ── Payroll PDF helpers (shared by single-row "Payroll" buttons and the
+  //    bulk "Download All Planter PDFs" action) ──────────────────────────
+
+  /** Build a complete PayrollSnapshot for one planter using the current
+   *  date filter, deductions table, and YTD/prev-period caches. */
+  function buildPlanterSnapshot(p: typeof planterSummary[number]): PayrollSnapshot {
+    const empKey  = employees.find(e => e.name === p.name)?.id || p.name;
+    const empObj  = employees.find(e => e.name === p.name);
+    const d       = planterDeds[p.name] ?? { campCosts: "", equipDeduction: "", other: "", cpp: "", ei: "", incomeTax: "", additionalEarnings: "", notes: "" };
+    const camp    = parseFloat(d.campCosts)      || 0;
+    const equip   = parseFloat(d.equipDeduction) || 0;
+    const other   = parseFloat(d.other)          || 0;
+    const tax     = parseFloat(d.incomeTax)      || 0;
+    const addl    = parseFloat(d.additionalEarnings) || 0;
+    const hours   = p.totalHours;
+    const hourlyEarned = hours > 0 ? p.totalWithVac / hours : null;
+    const topUp     = calcTopUp(p.totalWithVac, hours);
+    const splitBase = p.totalWithVac + topUp;
+    const gross     = splitBase - camp - equip - other;
+    const cpp       = gross > 0 ? gross * 0.0595 : 0;
+    const ei        = gross > 0 ? gross * 0.0166 : 0;
+    const net       = gross + addl - cpp - ei - tax;
+    const ytd       = ytdHours.get(empKey) ?? ytdHours.get(p.name) ?? 0;
+    const otHours   = Math.max(0, hours - 178);
+    const prev      = prevPeriodData.get(empKey) ?? prevPeriodData.get(p.name);
+    const prevAvgHourly = prev && prev.hours > 0 ? prev.withVac / prev.hours : null;
+    const otPay     = otHours > 0 && prevAvgHourly != null ? otHours * 1.5 * prevAvgHourly : null;
+
+    const speciesRows = [...p.speciesMap.values()].map(s => ({
+      block: s.block, species: s.species, code: s.code, trees: s.trees, earnings: s.earnings,
+      ratePerTree: s.trees > 0 ? s.earnings / s.trees : 0,
+    })).sort((a, b) => a.block.localeCompare(b.block) || b.trees - a.trees);
+
+    const planterEntries = filtered.filter(e => e.employeeName === p.name || e.employeeId === empKey);
+    // Collapse same-date entries into a single log row.
+    const dailyLogRows = (() => {
+      const byDate = new Map<string, { date: string; blocks: Set<string>; projects: Set<string>; trees: number; hours: number; earnings: number }>();
+      for (const e of planterEntries) {
+        const rec = byDate.get(e.date) ?? { date: e.date, blocks: new Set(), projects: new Set(), trees: 0, hours: 0, earnings: 0 };
+        if (e.block)   rec.blocks.add(e.block);
+        if (e.project) rec.projects.add(e.project);
+        rec.trees    += e.totalTrees;
+        rec.hours    += e.hoursWorked;
+        rec.earnings += e.totalEarnings;
+        byDate.set(e.date, rec);
+      }
+      return [...byDate.values()]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map(r => ({
+          date: r.date,
+          block: [...r.blocks].join(", "),
+          project: [...r.projects].join(", "),
+          trees: r.trees,
+          hours: r.hours,
+          earnings: r.earnings,
+        }));
+    })();
+
+    return {
+      type: "planter", name: p.name,
+      employeeNumber: empObj?.employeeNumber ?? "—",
+      role: empObj?.role ?? "Planter",
+      crewBoss: planterEntries[0]?.crewBoss ?? "—",
+      period: `${dateFrom} – ${dateTo}`,
+      totalTrees: p.totalTrees, earnings: p.totalEarnings,
+      vacPay: p.totalWithVac - p.totalEarnings,
+      totalWithVac: p.totalWithVac, days: p.days.size,
+      speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree })),
+      dailyLog: dailyLogRows,
+      campCosts: camp, equipDeduction: equip, other, gross,
+      hours, hourlyEarned, topUp, ytd,
+      otHours, otPay, prevAvgHourly,
+      cpp, ei, incomeTax: tax, net,
+      special: splitBase * 0.25, regular: splitBase * 0.75,
+      additionalEarnings: addl, notes: d.notes ?? "",
+    };
+  }
+
+  /** Render the payroll statement for `r` into a PDF Blob via html2canvas +
+   *  jsPDF. Returns null on failure (and logs to console). */
+  async function renderPayrollPdfBlob(r: PayrollSnapshot): Promise<Blob | null> {
+    const thS = `padding:6px 10px;text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#9ca3af;border-bottom:1px solid #e5e7eb;background:#f9fafb`;
+    const thR = thS + ";text-align:right";
+
+    const earningsSection = r.type === "planter"
+      ? `<div class="section-label">Breakdown</div>
+         <table>
+           <thead><tr>
+             <th style="${thS}">Block</th><th style="${thS}">Code</th><th style="${thS}">Species</th>
+             <th style="${thR}">Trees</th><th style="${thR}">Rate/Tree</th><th style="${thR}">Earnings</th>
+           </tr></thead>
+           <tbody>${r.speciesRows.map(s => `<tr>
+             <td style="padding:6px 10px;color:#374151">${s.block}</td>
+             <td style="padding:6px 10px;font-family:monospace;font-weight:700;color:#374151">${s.code}</td>
+             <td style="padding:6px 10px">${s.species}</td>
+             <td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(s.trees)}</td>
+             <td style="padding:6px 10px;text-align:right;color:#6b7280">$${s.ratePerTree.toFixed(4)}</td>
+             <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(s.earnings)}</td>
+           </tr>`).join("")}</tbody>
+           <tfoot><tr style="background:#f9fafb;border-top:2px solid #d1d5db">
+             <td colspan="3" style="padding:6px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:#6b7280">Total</td>
+             <td style="padding:6px 10px;text-align:right;font-weight:700">${fmt(r.totalTrees)}</td>
+             <td></td>
+             <td style="padding:6px 10px;text-align:right;font-weight:700">${fmtC(r.earnings)}</td>
+           </tr></tfoot>
+         </table>`
+      : r.type === "crew"
+      ? `<div class="section-label">Crew Boss Earnings</div>
+         <table><tbody>
+           <tr><td style="padding:6px 10px">Crew trees planted</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(r.crewTrees ?? 0)}</td></tr>
+           <tr><td style="padding:6px 10px">Planters supervised</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.planterCount ?? 0}</td></tr>
+           <tr><td style="padding:6px 10px">Rate per tree</td><td style="padding:6px 10px;text-align:right;font-weight:600">$0.0200</td></tr>
+           <tr style="border-top:2px solid #d1d5db;font-weight:700"><td style="padding:6px 10px">Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td></tr>
+         </tbody></table>`
+      : `<div class="section-label">Earnings</div>
+         <table><tbody>
+           <tr><td style="padding:6px 10px">Type</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.rateType === "hourly" ? "Hourly" : "Day Rate"}</td></tr>
+           <tr><td style="padding:6px 10px">Rate</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.rate ?? 0)} ${r.rateType === "hourly" ? "/ hr" : "/ day"}</td></tr>
+           <tr><td style="padding:6px 10px">${r.rateType === "hourly" ? "Hours" : "Days"}</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.quantity ?? 0}</td></tr>
+           <tr style="border-top:2px solid #d1d5db;font-weight:700"><td style="padding:6px 10px">Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td></tr>
+         </tbody></table>`;
+
+    const dailySection = r.type === "planter" && r.dailyLog.length > 0
+      ? `<div class="section-label">Daily Production Log</div>
+         <table>
+           <thead><tr>
+             <th style="${thS}">Date</th><th style="${thS}">Block</th><th style="${thS}">Project</th>
+             <th style="${thR}">Trees</th><th style="${thR}">Hours</th><th style="${thR}">Earnings</th>
+           </tr></thead>
+           <tbody>${r.dailyLog.map(d => `<tr>
+             <td style="padding:6px 10px;white-space:nowrap">${d.date}</td>
+             <td style="padding:6px 10px">${d.block || "—"}</td>
+             <td style="padding:6px 10px">${d.project || "—"}</td>
+             <td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(d.trees)}</td>
+             <td style="padding:6px 10px;text-align:right;color:#6b7280">${d.hours}h</td>
+             <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(d.earnings)}</td>
+           </tr>`).join("")}</tbody>
+           <tfoot><tr style="background:#f9fafb;border-top:2px solid #d1d5db;font-weight:700">
+             <td colspan="3" style="padding:6px 10px;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#6b7280">${r.days} day${r.days !== 1 ? "s" : ""}</td>
+             <td style="padding:6px 10px;text-align:right">${fmt(r.totalTrees)}</td>
+             <td style="padding:6px 10px;text-align:right;color:#6b7280">—</td>
+             <td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td>
+           </tr></tfoot>
+         </table>`
+      : "";
+
+    const docHtml = `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<title>Payroll Report – ${r.name}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #111827; background: #fff; padding: 40px 48px; max-width: 860px; margin: 0 auto; }
+  .section-label { font-size: 9px; text-transform: uppercase; letter-spacing: .15em; font-weight: 700; color: #9ca3af; margin: 22px 0 8px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 24px; }
+  .kpi { border-radius: 10px; padding: 14px 16px; border: 1px solid #e5e7eb; }
+  .kpi.accent { background: #111827; border-color: #111827; }
+  .kpi-label { font-size: 9px; text-transform: uppercase; letter-spacing: .12em; font-weight: 700; color: #9ca3af; }
+  .kpi.accent .kpi-label { color: #6b7280; }
+  .kpi-value { font-size: 18px; font-weight: 900; color: #111827; margin-top: 4px; }
+  .kpi.accent .kpi-value { color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .waterfall-row td { padding: 4px 10px; }
+  .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; }
+  .sig-line { border-bottom: 1px solid #374151; height: 32px; margin-bottom: 6px; }
+  .sig-label { font-size: 9px; text-transform: uppercase; letter-spacing: .1em; font-weight: 600; color: #9ca3af; }
+  .footer { display: flex; justify-content: space-between; margin-top: 24px; font-size: 10px; color: #9ca3af; }
+</style></head><body>
+
+<div style="display:flex;align-items:flex-start;justify-content:space-between;padding-bottom:16px;border-bottom:1px solid #e5e7eb">
+  <div>
+    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.15em;font-weight:700;color:#9ca3af">Payroll Statement</div>
+    <div style="font-size:22px;font-weight:900;color:#111827;margin-top:4px">${r.name}</div>
+    <div style="font-size:11px;color:#6b7280;margin-top:4px">${r.role}&nbsp;&nbsp;·&nbsp;&nbsp;Emp. #: <strong style="color:#374151">${r.employeeNumber}</strong>
+      ${r.crewBoss !== "—" ? `&nbsp;&nbsp;·&nbsp;&nbsp;Crew Boss: <strong style="color:#374151">${r.crewBoss}</strong>` : ""}
+    </div>
+    <div style="margin-top:4px;font-size:12px;color:#6b7280">Period: <strong style="color:#374151">${r.period}</strong></div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.15em;font-weight:700;color:#9ca3af">Integrity Reforestation</div>
+    <div style="font-size:10px;color:#9ca3af;margin-top:3px">Generated ${new Date().toLocaleDateString("en-CA")}</div>
+    <div style="margin-top:8px;font-size:28px;font-weight:900;color:#111827">${fmtC(r.type === "planter" ? r.totalWithVac : r.net)}</div>
+    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:#9ca3af">${r.type === "planter" ? "Gross" : "Net Pay"}</div>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  ${r.type === "planter" ? `
+    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.totalWithVac)}</div></div>
+    <div class="kpi"><div class="kpi-label">Trees</div><div class="kpi-value">${fmt(r.totalTrees)}</div></div>
+    <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
+  ` : `
+    <div class="kpi accent"><div class="kpi-label">Net Pay</div><div class="kpi-value">${fmtC(r.net)}</div></div>
+    <div class="kpi"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.gross)}</div></div>
+    <div class="kpi"><div class="kpi-label">Earnings</div><div class="kpi-value">${fmtC(r.earnings)}</div></div>
+    <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
+  `}
+</div>
+
+${earningsSection}
+
+<div class="section-label">Deduction Waterfall</div>
+<table>
+  <tbody>
+    <tr><td style="padding:6px 10px;font-weight:600">${r.type === "planter" ? "Piece-Rate Earnings w/ Vacation Pay" : "Base Earnings"}</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.type === "planter" ? r.totalWithVac : r.earnings)}</td></tr>
+    ${r.topUp > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Min. Wage Top-Up (ON $${MIN_WAGE.toFixed(2)}/h floor)</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(r.topUp)}</td></tr>` : ""}
+    ${r.campCosts > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Camp Costs</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.campCosts)}</td></tr>` : ""}
+    ${r.equipDeduction > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Equipment Deduction</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.equipDeduction)}</td></tr>` : ""}
+    ${r.other > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Other</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.other)}</td></tr>` : ""}
+    <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:8px 10px">Gross Taxable</td><td style="padding:8px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
+    ${r.otPay != null && r.otPay > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Overtime Pay (${r.otHours}h × 1.5×)</td><td style="padding:6px 10px;text-align:right;color:#d97706">+${fmtC(r.otPay)}</td></tr>` : ""}
+    ${r.type !== "planter" ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
+    <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">EI (1.66%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.ei)}</td></tr>` : ""}
+    ${r.type !== "planter" && r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
+    <tr style="font-weight:900;font-size:14px;border-top:2px solid #111827;background:#f9fafb"><td style="padding:10px">${r.type === "planter" ? "Earnings before CPP, EI, Income Tax" : "Net Pay"}</td><td style="padding:10px;text-align:right">${fmtC(r.type === "planter" ? r.gross + r.additionalEarnings : r.net)}</td></tr>
+  </tbody>
+</table>
+
+<div class="section-label">Compliance & Hours</div>
+<table><tbody>
+  <tr><td style="padding:6px 10px">Hours This Period</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.hours > 0 ? r.hours + "h" : "—"}</td></tr>
+  <tr><td style="padding:6px 10px">Hourly Earned (Earnings ÷ Hours)</td><td style="padding:6px 10px;text-align:right;font-weight:600;color:${r.hourlyEarned != null && r.hourlyEarned < 17.20 ? "#dc2626" : "#059669"}">${r.hourlyEarned != null ? "$" + r.hourlyEarned.toFixed(2) + "/h" : "—"}</td></tr>
+  ${r.topUp > 0 ? `<tr><td style="padding:6px 10px">Min. Wage Top-Up (ON $17.20/h floor)</td><td style="padding:6px 10px;text-align:right;font-weight:600;color:#059669">${fmtC(r.topUp)}</td></tr>` : ""}
+  <tr><td style="padding:6px 10px">Total Hours (YTD)</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.ytd > 0 ? r.ytd + "h" : "—"}</td></tr>
+</tbody></table>
+
+<div class="section-label">Income Allocation</div>
+<table><tbody>
+  <tr><td style="padding:6px 10px">25% Special Worksite Allowance</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.special)}</td></tr>
+  <tr><td style="padding:6px 10px">75% Regular Employment Income</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(r.regular)}</td></tr>
+  <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:6px 10px">Gross Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.special + r.regular)}</td></tr>
+</tbody></table>
+
+${dailySection}
+
+<div class="sig-grid">
+  <div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Employee Signature &amp; Date</div>
+  </div>
+  <div>
+    <div class="sig-line"></div>
+    <div class="sig-label">Authorized Signatory &amp; Date</div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>Integrity Reforestation · Payroll Statement</span>
+  <span>${r.name} · ${r.period}</span>
+</div>
+</body></html>`;
+
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:860px;height:1200px;border:0;visibility:hidden";
+    document.body.appendChild(iframe);
+    const idoc = iframe.contentDocument;
+    if (!idoc) { document.body.removeChild(iframe); return null; }
+    idoc.open(); idoc.write(docHtml); idoc.close();
+    await new Promise(res => setTimeout(res, 400));
+
+    try {
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+        import("html2canvas"),
+        import("jspdf"),
+      ]);
+      const canvas = await html2canvas(idoc.body, {
+        scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
+      });
+      const pdf = new jsPDF({ unit: "pt", format: "letter" });
+      const pageW  = pdf.internal.pageSize.getWidth();
+      const pageH  = pdf.internal.pageSize.getHeight();
+      const margin = 24;
+      const imgW   = pageW - margin * 2;
+      const contentH_pt = pageH - margin * 2;
+      const pxPerPt   = canvas.width / imgW;
+      const sliceH_px = Math.floor(contentH_pt * pxPerPt);
+
+      let sliceTop = 0;
+      let isFirstPage = true;
+      while (sliceTop < canvas.height) {
+        if (!isFirstPage) pdf.addPage();
+        isFirstPage = false;
+        const sliceH = Math.min(sliceH_px, canvas.height - sliceTop);
+        const sliceCanvas = document.createElement("canvas");
+        sliceCanvas.width  = canvas.width;
+        sliceCanvas.height = sliceH;
+        const sctx = sliceCanvas.getContext("2d");
+        if (!sctx) break;
+        sctx.drawImage(canvas, 0, sliceTop, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        const sliceData = sliceCanvas.toDataURL("image/png");
+        const sliceH_pt = (sliceH * imgW) / canvas.width;
+        pdf.addImage(sliceData, "PNG", margin, margin, imgW, sliceH_pt);
+        sliceTop += sliceH;
+      }
+      return pdf.output("blob") as Blob;
+    } catch (err) {
+      console.error("[payroll] PDF generation failed:", err);
+      return null;
+    } finally {
+      document.body.removeChild(iframe);
+    }
+  }
+
+  function triggerBlobDownload(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const [bulkPdfProgress, setBulkPdfProgress] = useState<{ done: number; total: number } | null>(null);
+  async function downloadAllPlanterPdfs() {
+    if (planterSummary.length === 0) {
+      alert("No planters in the current date range.");
+      return;
+    }
+    setBulkPdfProgress({ done: 0, total: planterSummary.length });
+    try {
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+      let done = 0;
+      for (const p of planterSummary) {
+        const snap = buildPlanterSnapshot(p);
+        const blob = await renderPayrollPdfBlob(snap);
+        if (blob) {
+          const safeName   = snap.name.replace(/[^\w-]+/g, "_");
+          const safePeriod = snap.period.replace(/[^\w-]+/g, "_");
+          zip.file(`Payroll-${safeName}-${safePeriod}.pdf`, blob);
+        }
+        done++;
+        setBulkPdfProgress({ done, total: planterSummary.length });
+      }
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      triggerBlobDownload(zipBlob, `Planter-Payroll-PDFs-${dateFrom}-to-${dateTo}.zip`);
+    } catch (err) {
+      console.error("[payroll] bulk PDF download failed:", err);
+      alert("Couldn't generate the ZIP. Check the console for details.");
+    } finally {
+      setBulkPdfProgress(null);
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -5406,8 +5749,20 @@ ${blockSections}
 
               return (
               <div className="bg-surface border border-border rounded-xl overflow-hidden">
-                <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-4">
-                  <div className="text-xs font-semibold text-text-primary">Planter Summary</div>
+                <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-3">
+                    <div className="text-xs font-semibold text-text-primary">Planter Summary</div>
+                    <button
+                      onClick={downloadAllPlanterPdfs}
+                      disabled={!!bulkPdfProgress || planterSummary.length === 0}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Download all planter payroll PDFs as a ZIP"
+                    >
+                      {bulkPdfProgress
+                        ? `Generating ${bulkPdfProgress.done}/${bulkPdfProgress.total}…`
+                        : <><span>↓</span> Download All Planter PDFs ({planterSummary.length})</>}
+                    </button>
+                  </div>
                   <div className="flex items-center gap-4 text-[10px] text-text-tertiary flex-wrap">
                     <span><span className="font-semibold text-text-secondary">Gross</span> = Earnings + Min-Wage Top-Up − Camp − Equip − Other</span>
                     <span className="text-border/80">|</span>
