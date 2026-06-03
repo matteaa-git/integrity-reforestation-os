@@ -2389,7 +2389,6 @@ ${blockSections}
       ? `<div class="section-label">Crew Boss Earnings</div>
          <table><tbody>
            <tr><td style="padding:6px 10px">Crew trees planted</td><td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(r.crewTrees ?? 0)}</td></tr>
-           <tr><td style="padding:6px 10px">Planters supervised</td><td style="padding:6px 10px;text-align:right;font-weight:600">${r.planterCount ?? 0}</td></tr>
            <tr><td style="padding:6px 10px">Rate per tree</td><td style="padding:6px 10px;text-align:right;font-weight:600">$0.0200</td></tr>
            <tr style="border-top:2px solid #d1d5db;font-weight:700"><td style="padding:6px 10px">Earnings</td><td style="padding:6px 10px;text-align:right">${fmtC(r.earnings)}</td></tr>
          </tbody></table>`
@@ -2459,8 +2458,8 @@ ${blockSections}
   <div style="text-align:right">
     <div style="font-size:9px;text-transform:uppercase;letter-spacing:.15em;font-weight:700;color:#9ca3af">Integrity Reforestation</div>
     <div style="font-size:10px;color:#9ca3af;margin-top:3px">Generated ${new Date().toLocaleDateString("en-CA")}</div>
-    <div style="margin-top:8px;font-size:28px;font-weight:900;color:#111827">${fmtC(r.type === "planter" ? r.totalWithVac : r.net)}</div>
-    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:#9ca3af">${r.type === "planter" ? "Gross" : "Net Pay"}</div>
+    <div style="margin-top:8px;font-size:28px;font-weight:900;color:#111827">${fmtC(r.type === "planter" ? r.totalWithVac : r.type === "crew" ? r.earnings : r.net)}</div>
+    <div style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:#9ca3af">${r.type === "planter" || r.type === "crew" ? "Gross" : "Net Pay"}</div>
   </div>
 </div>
 
@@ -2470,8 +2469,8 @@ ${blockSections}
     <div class="kpi"><div class="kpi-label">Trees</div><div class="kpi-value">${fmt(r.totalTrees)}</div></div>
     <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
   ` : r.type === "crew" ? `
-    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.gross)}</div></div>
-    <div class="kpi"><div class="kpi-label">Earnings</div><div class="kpi-value">${fmtC(r.earnings)}</div></div>
+    <div class="kpi accent"><div class="kpi-label">Gross</div><div class="kpi-value">${fmtC(r.earnings)}</div></div>
+    <div class="kpi"><div class="kpi-label">Trees</div><div class="kpi-value">${fmt(r.crewTrees ?? 0)}</div></div>
     <div class="kpi"><div class="kpi-label">Hours</div><div class="kpi-value">${r.hours > 0 ? r.hours + "h" : "—"}</div></div>
   ` : `
     <div class="kpi accent"><div class="kpi-label">Net Pay</div><div class="kpi-value">${fmtC(r.net)}</div></div>
@@ -8471,8 +8470,8 @@ ${dailySection}
                   <div className="text-right">
                     <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400">Integrity Reforestation</div>
                     <div className="text-[10px] text-gray-400 mt-0.5">{new Date().toLocaleDateString("en-CA")}</div>
-                    <div className="text-3xl font-black text-gray-900 mt-2">{fmtC(r.type === "planter" ? r.totalWithVac : r.net)}</div>
-                    <div className="text-[9px] uppercase tracking-[.1em] font-bold text-gray-400">{r.type === "planter" ? "Gross" : "Net Pay"}</div>
+                    <div className="text-3xl font-black text-gray-900 mt-2">{fmtC(r.type === "planter" ? r.totalWithVac : r.type === "crew" ? r.earnings : r.net)}</div>
+                    <div className="text-[9px] uppercase tracking-[.1em] font-bold text-gray-400">{r.type === "planter" || r.type === "crew" ? "Gross" : "Net Pay"}</div>
                   </div>
                 </div>
 
@@ -8486,8 +8485,8 @@ ${dailySection}
                       ]
                     : r.type === "crew"
                     ? [
-                        { label: "Gross", value: fmtC(r.gross), accent: true },
-                        { label: "Earnings", value: fmtC(r.earnings) },
+                        { label: "Gross", value: fmtC(r.earnings), accent: true },
+                        { label: "Trees", value: fmt(r.crewTrees ?? 0) },
                         { label: "Hours", value: r.hours > 0 ? `${r.hours}h` : "—" },
                       ]
                     : [
