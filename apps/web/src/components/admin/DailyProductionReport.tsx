@@ -257,7 +257,8 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   // Client Summary tab
   const [clientDateFrom, setClientDateFrom] = useState(todayStr());
   const [clientDateTo,   setClientDateTo]   = useState(todayStr());
-  const [generateForDate, setGenerateForDate] = useState(todayStr());
+  const [generateFrom, setGenerateFrom] = useState(todayStr());
+  const [generateTo,   setGenerateTo]   = useState(todayStr());
   const [showGenerate, setShowGenerate] = useState(false);
   const [clientSelectedProjects, setClientSelectedProjects] = useState<Set<string>>(new Set());
   const [clientSelectedBlocks,   setClientSelectedBlocks]   = useState<Set<string>>(new Set());
@@ -1052,12 +1053,13 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     setOpenExport(null);
   }
 
-  function buildClientBlocks(forDate?: string) {
-    if (forDate) {
+  function buildClientBlocks(range?: { from: string; to: string }) {
+    if (range) {
+      const { from, to } = range;
       type CrewBreakdown = { totalTrees: number; planters: Set<string>; species: Map<string, { code: string; trees: number }> };
       const map = new Map<string, { project: string; block: string; totalTrees: number; planters: Set<string>; dates: Set<string>; species: Map<string, { code: string; trees: number }>; crews: Map<string, CrewBreakdown> }>();
       for (const e of entries) {
-        if (e.date !== forDate) continue;
+        if (e.date < from || e.date > to) continue;
         const proj = e.project || "(No Project)";
         const blk  = e.block   || "(No Block)";
         const key  = `${proj}|${blk}`;
@@ -1090,16 +1092,14 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     );
   }
 
-  function printClientSummary(forDate?: string) {
+  function printClientSummary(range?: { from: string; to: string }) {
     const logoUrl = `${window.location.origin}/integrity-logo.png`;
-    const blocks = buildClientBlocks(forDate);
+    const blocks = buildClientBlocks(range);
     const totalTrees = blocks.reduce((s, b) => s + b.totalTrees, 0);
     const allDates   = [...new Set(blocks.flatMap(b => [...b.dates]))].sort();
-    const dateLabel  = forDate
-      ? forDate
-      : clientDateFrom === clientDateTo
-        ? clientDateFrom
-        : `${clientDateFrom} — ${clientDateTo}`;
+    const labelFrom  = range ? range.from : clientDateFrom;
+    const labelTo    = range ? range.to   : clientDateTo;
+    const dateLabel  = labelFrom === labelTo ? labelFrom : `${labelFrom} — ${labelTo}`;
 
     const blockRows = blocks.map(b => {
       const speciesRows = [...b.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
@@ -6900,27 +6900,44 @@ ${dailySection}
                   <div className="text-xs text-text-tertiary mt-0.5">Production report for client delivery — pricing excluded</div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap" onClick={e => e.stopPropagation()}>
-                  {/* Generate for date */}
+                  {/* Generate for date range */}
                   <div className="relative">
                     <button
                       onClick={() => { setShowGenerate(v => !v); setOpenExport(null); }}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-surface hover:bg-surface-secondary transition-all text-text-primary"
                     >
-                      Generate for date
+                      Generate for date range
                     </button>
                     {showGenerate && (
-                      <div className="absolute right-0 top-full mt-1 w-64 bg-surface border border-border rounded-xl shadow-xl z-20 p-3 space-y-3">
-                        <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Generate report for a single day</div>
-                        <input
-                          type="date"
-                          value={generateForDate}
-                          onChange={e => setGenerateForDate(e.target.value)}
-                          className="w-full text-xs rounded-lg border border-border bg-surface-secondary px-3 py-2 text-text-primary focus:outline-none focus:border-primary"
-                        />
+                      <div className="absolute right-0 top-full mt-1 w-72 bg-surface border border-border rounded-xl shadow-xl z-20 p-3 space-y-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Generate report for a date range</div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <label className="text-[10px] text-text-tertiary block">
+                            <span className="block mb-1">From</span>
+                            <input
+                              type="date"
+                              value={generateFrom}
+                              onChange={e => setGenerateFrom(e.target.value)}
+                              className="w-full text-xs rounded-lg border border-border bg-surface-secondary px-2.5 py-2 text-text-primary focus:outline-none focus:border-primary"
+                            />
+                          </label>
+                          <label className="text-[10px] text-text-tertiary block">
+                            <span className="block mb-1">To</span>
+                            <input
+                              type="date"
+                              value={generateTo}
+                              min={generateFrom}
+                              onChange={e => setGenerateTo(e.target.value)}
+                              className="w-full text-xs rounded-lg border border-border bg-surface-secondary px-2.5 py-2 text-text-primary focus:outline-none focus:border-primary"
+                            />
+                          </label>
+                        </div>
                         <button
                           onClick={() => {
                             setShowGenerate(false);
-                            printClientSummary(generateForDate);
+                            const from = generateFrom;
+                            const to   = generateTo < generateFrom ? generateFrom : generateTo;
+                            printClientSummary({ from, to });
                           }}
                           className="w-full py-2 text-xs font-semibold rounded-lg transition-all hover:opacity-90"
                           style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
