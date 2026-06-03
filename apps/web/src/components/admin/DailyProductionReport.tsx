@@ -1262,6 +1262,10 @@ ${blockSections}
         if (e.date < from || e.date > to) continue;
         const proj = e.project || "(No Project)";
         const blk  = e.block   || "(No Block)";
+        // Honour the toolbar's Project / Block filter chips so a date-range
+        // report only includes the projects + blocks the user picked.
+        if (clientSelectedProjects.size > 0 && !clientSelectedProjects.has(proj)) continue;
+        if (clientSelectedBlocks.size   > 0 && !clientSelectedBlocks.has(`${proj}|${blk}`)) continue;
         const key  = `${proj}|${blk}`;
         if (!map.has(key)) map.set(key, { project: proj, block: blk, totalTrees: 0, planters: new Set(), dates: new Set(), species: new Map(), crews: new Map() });
         const rec = map.get(key)!;
