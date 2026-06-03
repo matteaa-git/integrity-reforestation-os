@@ -2135,20 +2135,23 @@ ${blockSections}
     const map = new Map<string, {
       name: string; totalTrees: number; totalEarnings: number; totalWithVac: number; totalHours: number; overtimeHours: number;
       days: Set<string>;
+      // Per-planter hours kept as a per-date map so two entries on the same
+      // day (e.g. two blocks) don't double-count — we take the max for the
+      // day, then sum the per-day values into totalHours below.
+      hoursByDate: Map<string, number>;
       // Per-planter breakdown keyed by `${block}|${species}` so the payroll
       // statement can show which block each tree count belongs to.
       speciesMap: Map<string, { block: string; species: string; code: string; trees: number; earnings: number }>;
     }>();
     for (const e of filtered) {
       const key = e.employeeId || e.employeeName;
-      if (!map.has(key)) map.set(key, { name: e.employeeName, totalTrees: 0, totalEarnings: 0, totalWithVac: 0, totalHours: 0, overtimeHours: 0, days: new Set(), speciesMap: new Map() });
+      if (!map.has(key)) map.set(key, { name: e.employeeName, totalTrees: 0, totalEarnings: 0, totalWithVac: 0, totalHours: 0, overtimeHours: 0, days: new Set(), hoursByDate: new Map(), speciesMap: new Map() });
       const rec = map.get(key)!;
       rec.totalTrees    += e.totalTrees;
       rec.totalEarnings += e.totalEarnings;
       rec.totalWithVac  += e.totalWithVac;
-      rec.totalHours    += e.hoursWorked;
-      rec.overtimeHours += Math.max(0, e.hoursWorked - 8);
       rec.days.add(e.date);
+      rec.hoursByDate.set(e.date, Math.max(rec.hoursByDate.get(e.date) ?? 0, e.hoursWorked));
       const block     = e.block || "(No Block)";
       // Key by speciesId, not the display name — production entries sometimes
       // have inconsistent capitalisation/whitespace on the species text (e.g.
@@ -2163,18 +2166,32 @@ ${blockSections}
         rec.speciesMap.set(k, s);
       }
     }
+    // Roll hoursByDate up into totalHours / overtimeHours.
+    for (const rec of map.values()) {
+      let total = 0, ot = 0;
+      for (const h of rec.hoursByDate.values()) { total += h; ot += Math.max(0, h - 8); }
+      rec.totalHours    = total;
+      rec.overtimeHours = ot;
+    }
     return [...map.values()].sort((a, b) => b.totalTrees - a.totalTrees);
   }, [filtered]);
 
   const crewSummary = useMemo(() => {
-    const map = new Map<string, { crew: string; totalTrees: number; totalEarnings: number; totalWithVac: number; crewHours: number; overtimeHours: number; planters: Set<string> }>();
+    const map = new Map<string, { crew: string; totalTrees: number; totalEarnings: number; totalWithVac: number; crewHours: number; overtimeHours: number; planters: Set<string>; hoursByDate: Map<string, number> }>();
     for (const e of filtered) {
-      if (!map.has(e.crewBoss)) map.set(e.crewBoss, { crew: e.crewBoss, totalTrees: 0, totalEarnings: 0, totalWithVac: 0, crewHours: 0, overtimeHours: 0, planters: new Set() });
+      if (!map.has(e.crewBoss)) map.set(e.crewBoss, { crew: e.crewBoss, totalTrees: 0, totalEarnings: 0, totalWithVac: 0, crewHours: 0, overtimeHours: 0, planters: new Set(), hoursByDate: new Map() });
       const rec = map.get(e.crewBoss)!;
       rec.totalTrees += e.totalTrees; rec.totalEarnings += e.totalEarnings; rec.totalWithVac += e.totalWithVac;
-      rec.crewHours     += e.hoursWorked;
-      rec.overtimeHours += Math.max(0, e.hoursWorked - 8);
+      // Take max hours per date so two same-day entries (different blocks)
+      // don't double the crew's hours.
+      rec.hoursByDate.set(e.date, Math.max(rec.hoursByDate.get(e.date) ?? 0, e.hoursWorked));
       rec.planters.add(e.employeeId || e.employeeName);
+    }
+    for (const rec of map.values()) {
+      let total = 0, ot = 0;
+      for (const h of rec.hoursByDate.values()) { total += h; ot += Math.max(0, h - 8); }
+      rec.crewHours     = total;
+      rec.overtimeHours = ot;
     }
     return [...map.values()].sort((a, b) => b.totalTrees - a.totalTrees);
   }, [filtered]);
@@ -2182,15 +2199,26 @@ ${blockSections}
   // YTD hours per employee — cumulative from Jan 1 of the report year through
   // the report's dateTo (inclusive). Caps at dateTo so a back-dated payroll
   // run doesn't pick up hours from later periods that haven't been paid yet.
+  // Dedupe by date: max hours per (employee, day) so a planter who has two
+  // entries on the same day (e.g. different blocks) gets one day's worth of
+  // hours, not two.
   const ytdHours = useMemo(() => {
     if (!dateTo) return new Map<string, number>();
     const year = dateTo.slice(0, 4);
     const yearStart = `${year}-01-01`;
-    const map = new Map<string, number>();
+    const perEmpDate = new Map<string, Map<string, number>>();
     for (const e of entries) {
       if (e.date < yearStart || e.date > dateTo) continue;
       const key = e.employeeId || e.employeeName;
-      map.set(key, (map.get(key) ?? 0) + e.hoursWorked);
+      if (!perEmpDate.has(key)) perEmpDate.set(key, new Map());
+      const m = perEmpDate.get(key)!;
+      m.set(e.date, Math.max(m.get(e.date) ?? 0, e.hoursWorked));
+    }
+    const map = new Map<string, number>();
+    for (const [key, dateMap] of perEmpDate) {
+      let total = 0;
+      for (const h of dateMap.values()) total += h;
+      map.set(key, total);
     }
     return map;
   }, [entries, dateTo]);
@@ -2205,14 +2233,22 @@ ${blockSections}
     prevFrom.setDate(prevFrom.getDate() - 28);
     const prevToStr   = prevTo.toISOString().slice(0, 10);
     const prevFromStr = prevFrom.toISOString().slice(0, 10);
-    const map = new Map<string, { hours: number; withVac: number }>();
+    // Hours dedupe per (employee, date) — same reason as planterSummary.
+    const perEmpDate = new Map<string, Map<string, number>>();
+    const withVacMap = new Map<string, number>();
     for (const e of entries) {
       if (e.date < prevFromStr || e.date > prevToStr) continue;
       const key = e.employeeId || e.employeeName;
-      const rec = map.get(key) ?? { hours: 0, withVac: 0 };
-      rec.hours   += e.hoursWorked;
-      rec.withVac += e.totalWithVac;
-      map.set(key, rec);
+      if (!perEmpDate.has(key)) perEmpDate.set(key, new Map());
+      const m = perEmpDate.get(key)!;
+      m.set(e.date, Math.max(m.get(e.date) ?? 0, e.hoursWorked));
+      withVacMap.set(key, (withVacMap.get(key) ?? 0) + e.totalWithVac);
+    }
+    const map = new Map<string, { hours: number; withVac: number }>();
+    for (const [key, dateMap] of perEmpDate) {
+      let hours = 0;
+      for (const h of dateMap.values()) hours += h;
+      map.set(key, { hours, withVac: withVacMap.get(key) ?? 0 });
     }
     return map;
   }, [entries, dateFrom]);
