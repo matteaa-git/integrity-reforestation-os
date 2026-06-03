@@ -548,8 +548,27 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
         setRates(saved.sort((a, b) => a.species.localeCompare(b.species)));
       }
     });
-    getAllRecords<ProductionEntry>("production_entries").then(saved => {
-      setEntries(saved.sort((a, b) => b.date.localeCompare(a.date)));
+    getAllRecords<ProductionEntry>("production_entries").then(async saved => {
+      // One-time backfill: from 2026-05-17 onward, every entry's hoursWorked
+      // is forced to 8h (data correction — hours weren't reliably captured in
+      // the field for that period). Gated by a localStorage flag so it only
+      // runs once per device.
+      const BACKFILL_KEY = "hours_8_backfill_2026_05_17";
+      const BACKFILL_FROM = "2026-05-17";
+      let patched = saved;
+      if (typeof window !== "undefined" && !localStorage.getItem(BACKFILL_KEY)) {
+        const dirty = saved.filter(e => e.date >= BACKFILL_FROM && e.hoursWorked !== 8);
+        if (dirty.length > 0) {
+          patched = saved.map(e => (e.date >= BACKFILL_FROM ? { ...e, hoursWorked: 8 } : e));
+          for (const e of dirty) {
+            try { await saveRecord("production_entries", { ...e, hoursWorked: 8 }); }
+            catch (err) { console.warn("[hours-8-backfill] save failed for", e.id, err); }
+          }
+          console.log(`[hours-8-backfill] patched ${dirty.length} entr${dirty.length === 1 ? "y" : "ies"} from ${BACKFILL_FROM} onward`);
+        }
+        localStorage.setItem(BACKFILL_KEY, "1");
+      }
+      setEntries(patched.sort((a, b) => b.date.localeCompare(a.date)));
     });
     getAllRecords<SavedSession>("session_drafts").then(saved => {
       setSavedSessions(saved.sort((a, b) => b.savedAt.localeCompare(a.savedAt)));
