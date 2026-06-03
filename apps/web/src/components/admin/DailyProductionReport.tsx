@@ -1141,33 +1141,22 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
           <div class="block-title">${b.block}${b.project && b.project !== "(No Project)" ? ` <span class="block-sub">· ${b.project}</span>` : ""}</div>
           <div class="block-stats">
             <span><b>${b.planters}</b> planter${b.planters !== 1 ? "s" : ""}</span>
-            ${b.prescribed > 0 ? `<span>Prescribed <b>${fmt(b.prescribed)}</b></span>` : ""}
             <span>Planted <b>${fmt(b.planted)}</b></span>
-            ${b.prescribed > 0 ? `<span style="color:${varColor(b.variance, b.prescribed)};font-weight:600">${varCell(b.variance, b.prescribed)} (${b.variancePct >= 0 ? "+" : ""}${b.variancePct.toFixed(1)}%)</span>` : ""}
-            <span><b>${fmtC(b.earnings)}</b></span>
           </div>
         </div>
         <table class="species">
           <thead><tr>
-            <th>Species</th><th>Code</th>
-            <th class="r">Prescribed</th><th class="r">Planted</th>
-            <th class="r">Variance</th><th class="r">Earnings</th>
+            <th>Species</th><th>Code</th><th class="r">Planted</th>
           </tr></thead>
           <tbody>
-            ${b.speciesRows.map(r => `<tr>
+            ${b.speciesRows.filter(r => r.planted > 0).map(r => `<tr>
               <td>${r.species}</td>
               <td class="code">${r.code}</td>
-              <td class="r">${r.prescribed > 0 ? fmt(r.prescribed) : "—"}</td>
               <td class="r">${fmt(r.planted)}</td>
-              <td class="r" style="color:${varColor(r.variance, r.prescribed)};font-weight:600">${varCell(r.variance, r.prescribed)}</td>
-              <td class="r">${fmtC(r.earnings)}</td>
             </tr>`).join("")}
             <tr class="total-row">
               <td colspan="2">Total</td>
-              <td class="r">${b.prescribed > 0 ? fmt(b.prescribed) : "—"}</td>
               <td class="r">${fmt(b.planted)}</td>
-              <td class="r" style="color:${varColor(b.variance, b.prescribed)}">${varCell(b.variance, b.prescribed)}</td>
-              <td class="r">${fmtC(b.earnings)}</td>
             </tr>
           </tbody>
         </table>
@@ -1189,7 +1178,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   .report-header .subtitle { color: #6b7280; font-size: 11px; margin-top: 2px; }
   .report-header .company { text-align: right; font-size: 10px; color: #6b7280; line-height: 1.4; }
   .report-header .company b { color: #14532d; font-size: 11px; }
-  .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 22px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 22px; max-width: 480px; }
   .kpi { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fafafa; }
   .kpi.accent { background: #14532d; border-color: #14532d; color: #fff; }
   .kpi .label { font-size: 8px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: #9ca3af; }
@@ -1229,9 +1218,6 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
 
 <div class="kpi-grid">
   <div class="kpi accent"><div class="label">Total Planted</div><div class="value">${fmt(totalPlanted)}</div><div class="sub">trees</div></div>
-  <div class="kpi"><div class="label">Prescribed</div><div class="value">${totalPrescribed > 0 ? fmt(totalPrescribed) : "—"}</div><div class="sub">${totalPrescribed > 0 ? "trees target" : "no target"}</div></div>
-  <div class="kpi"><div class="label">Variance</div><div class="value" style="color:${varColor(totalVariance, totalPrescribed)}">${totalPrescribed > 0 ? (totalVariance >= 0 ? "+" : "") + fmt(totalVariance) : "—"}</div><div class="sub">${totalPrescribed > 0 ? `${totalVariancePct >= 0 ? "+" : ""}${totalVariancePct.toFixed(1)}%` : "—"}</div></div>
-  <div class="kpi"><div class="label">Earnings</div><div class="value">${fmtC(totalEarnings)}</div><div class="sub">across all blocks</div></div>
   <div class="kpi"><div class="label">Planters</div><div class="value">${totalPlanters}</div><div class="sub">distinct</div></div>
 </div>
 
