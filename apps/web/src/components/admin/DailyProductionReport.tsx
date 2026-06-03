@@ -113,6 +113,69 @@ function fmtC(n: number) {
 }
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`; }
 
+// Render an HTML document into a multi-page PDF Blob via a hidden iframe
+// (so the document's own CSS applies), html2canvas (to snapshot the result),
+// and jsPDF (to paginate). Used by every "Download PDF" path in this file.
+async function renderHtmlToPdfBlob(docHtml: string): Promise<Blob | null> {
+  if (typeof window === "undefined") return null;
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;left:-9999px;top:0;width:860px;height:1200px;border:0;visibility:hidden";
+  document.body.appendChild(iframe);
+  const idoc = iframe.contentDocument;
+  if (!idoc) { document.body.removeChild(iframe); return null; }
+  idoc.open(); idoc.write(docHtml); idoc.close();
+  await new Promise(res => setTimeout(res, 400));
+  try {
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      import("html2canvas"),
+      import("jspdf"),
+    ]);
+    const canvas = await html2canvas(idoc.body, {
+      scale: 2, backgroundColor: "#ffffff", useCORS: true, logging: false,
+    });
+    const pdf = new jsPDF({ unit: "pt", format: "letter" });
+    const pageW  = pdf.internal.pageSize.getWidth();
+    const pageH  = pdf.internal.pageSize.getHeight();
+    const margin = 24;
+    const imgW   = pageW - margin * 2;
+    const contentH_pt = pageH - margin * 2;
+    const pxPerPt   = canvas.width / imgW;
+    const sliceH_px = Math.floor(contentH_pt * pxPerPt);
+    let sliceTop = 0;
+    let isFirstPage = true;
+    while (sliceTop < canvas.height) {
+      if (!isFirstPage) pdf.addPage();
+      isFirstPage = false;
+      const sliceH = Math.min(sliceH_px, canvas.height - sliceTop);
+      const sliceCanvas = document.createElement("canvas");
+      sliceCanvas.width  = canvas.width;
+      sliceCanvas.height = sliceH;
+      const sctx = sliceCanvas.getContext("2d");
+      if (!sctx) break;
+      sctx.drawImage(canvas, 0, sliceTop, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+      const sliceData = sliceCanvas.toDataURL("image/png");
+      const sliceH_pt = (sliceH * imgW) / canvas.width;
+      pdf.addImage(sliceData, "PNG", margin, margin, imgW, sliceH_pt);
+      sliceTop += sliceH;
+    }
+    return pdf.output("blob") as Blob;
+  } catch (err) {
+    console.error("[pdf] render failed:", err);
+    return null;
+  } finally {
+    document.body.removeChild(iframe);
+  }
+}
+
+function triggerBlobDownloadGlobal(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Ontario general minimum wage. Used to compute the top-up that brings
 // piece-rate earnings up to the legal hourly floor — that top-up is part of
 // gross taxable pay, so CPP/EI/tax all calc on (earnings + top-up).
@@ -992,65 +1055,202 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     }
   }
 
-  function printBlockSummary() {
-    let body = `<h1 style="font-size:16px;margin-bottom:16px">Block Summary</h1>`;
-    for (const b of allBlockSummary) {
-      const speciesRows = [...b.species.entries()].sort((a, bv) => bv[1].trees - a[1].trees);
+  async function printBlockSummary() {
+    setOpenExport(null);
+    if (allBlockSummary.length === 0) {
+      alert("No block data to export.");
+      return;
+    }
+    // Pre-compute per-block stats once so the template is just templating.
+    type BlockRow = {
+      project: string; block: string;
+      planters: number;
+      prescribed: number; planted: number; variance: number; variancePct: number;
+      earnings: number;
+      speciesRows: { species: string; code: string; prescribed: number; planted: number; variance: number; earnings: number }[];
+    };
+    const blocks: BlockRow[] = allBlockSummary.map(b => {
+      const speciesEntries = [...b.species.entries()];
       const pbEntry = projectBlocks.find(pb => pb.blockName.trim().toLowerCase() === b.block.trim().toLowerCase());
       const target = blockTargets.get(`${b.project}|${b.block}`);
       const allocByLower = pbEntry
         ? new Map(pbEntry.allocations.map(a => [a.species.trim().toLowerCase(), a.trees]))
         : new Map<string, number>();
-      const prescribedTotal = target?.prescription ?? (pbEntry?.allocations.reduce((s, a) => s + a.trees, 0) ?? 0);
-      const variance = prescribedTotal > 0 ? b.totalTrees - prescribedTotal : 0;
-      const variancePct = prescribedTotal > 0 ? (variance / prescribedTotal) * 100 : 0;
-      const headerStats = [
-        `${b.planters.size} planter${b.planters.size !== 1 ? "s" : ""}`,
-        prescribedTotal > 0 ? `Prescribed ${fmt(prescribedTotal)}` : null,
-        `Planted ${fmt(b.totalTrees)}`,
-        prescribedTotal > 0 ? `${variance >= 0 ? "+" : ""}${fmt(variance)} (${variancePct >= 0 ? "+" : ""}${variancePct.toFixed(1)}%)` : null,
-        fmtC(b.totalEarnings),
-      ].filter(Boolean).join(" · ");
-      body += `<h2 style="font-size:13px;margin:16px 0 6px">${b.block} — ${headerStats}</h2>
-<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:8px">
-<thead><tr style="background:#f3f4f6">${["Species","Code","Prescribed","Planted","Variance","Earnings"].map(h => `<th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">${h}</th>`).join("")}</tr></thead>
-<tbody>`;
-      // Include species that are prescribed but not yet planted (zero rows from allocations).
-      const allSpeciesForBlock = new Set<string>([
-        ...speciesRows.map(([sp]) => sp),
+      const prescribed = target?.prescription ?? (pbEntry?.allocations.reduce((s, a) => s + a.trees, 0) ?? 0);
+      const planted    = b.totalTrees;
+      const variance   = prescribed > 0 ? planted - prescribed : 0;
+      const variancePct = prescribed > 0 ? (variance / prescribed) * 100 : 0;
+      // Union: planted species + prescribed (zero-planted) species.
+      const allSpecies = new Set<string>([
+        ...speciesEntries.map(([sp]) => sp),
         ...(pbEntry?.allocations.map(a => a.species) ?? []),
       ]);
-      const rows = [...allSpeciesForBlock].map(species => {
+      const speciesRows = [...allSpecies].map(species => {
         const s = b.species.get(species);
-        const prescribed = allocByLower.get(species.trim().toLowerCase()) ?? 0;
-        const planted = s?.trees ?? 0;
-        const earnings = s?.earnings ?? 0;
-        const v = prescribed > 0 ? planted - prescribed : 0;
-        return { species, code: s?.code ?? "", prescribed, planted, earnings, variance: v };
+        const pr = allocByLower.get(species.trim().toLowerCase()) ?? 0;
+        const pl = s?.trees ?? 0;
+        const er = s?.earnings ?? 0;
+        return { species, code: s?.code ?? "", prescribed: pr, planted: pl, earnings: er, variance: pr > 0 ? pl - pr : 0 };
       }).sort((a, bv) => bv.planted - a.planted);
-      for (const r of rows) {
-        const varCell = r.prescribed > 0
-          ? `${r.variance >= 0 ? "+" : ""}${fmt(r.variance)}`
-          : "—";
-        body += `<tr>
-          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6">${r.species}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;font-family:monospace">${r.code}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${r.prescribed > 0 ? fmt(r.prescribed) : "—"}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${fmt(r.planted)}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right;color:${r.prescribed > 0 ? (r.variance > 0 ? "#dc2626" : r.variance < 0 ? "#d97706" : "#16a34a") : "#9ca3af"}">${varCell}</td>
-          <td style="padding:4px 8px;border-bottom:1px solid #f3f4f6;text-align:right">${fmtC(r.earnings)}</td>
-        </tr>`;
+      return {
+        project: b.project, block: b.block,
+        planters: b.planters.size,
+        prescribed, planted, variance, variancePct,
+        earnings: b.totalEarnings,
+        speciesRows,
+      };
+    });
+
+    const totalPrescribed = blocks.reduce((s, r) => s + r.prescribed, 0);
+    const totalPlanted    = blocks.reduce((s, r) => s + r.planted, 0);
+    const totalEarnings   = blocks.reduce((s, r) => s + r.earnings, 0);
+    const totalVariance   = totalPrescribed > 0 ? totalPlanted - totalPrescribed : 0;
+    const totalVariancePct = totalPrescribed > 0 ? (totalVariance / totalPrescribed) * 100 : 0;
+    const totalPlanters   = new Set(allBlockSummary.flatMap(b => [...b.planters])).size;
+    const projectName     = [...new Set(blocks.map(b => b.project).filter(Boolean))].join(", ") || "All Projects";
+
+    // Inline base64 logo so it travels with the printed snapshot.
+    let logoSrc = "";
+    try {
+      const res = await fetch("/integrity-logo.png");
+      if (res.ok) {
+        const buf = await res.blob();
+        logoSrc = await new Promise<string>((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result as string);
+          fr.onerror = () => reject(new Error("logo read failed"));
+          fr.readAsDataURL(buf);
+        });
       }
-      body += `<tr style="font-weight:600;background:#f9fafb">
-        <td colspan="2" style="padding:4px 8px">Total</td>
-        <td style="padding:4px 8px;text-align:right">${prescribedTotal > 0 ? fmt(prescribedTotal) : "—"}</td>
-        <td style="padding:4px 8px;text-align:right">${fmt(b.totalTrees)}</td>
-        <td style="padding:4px 8px;text-align:right">${prescribedTotal > 0 ? (variance >= 0 ? "+" : "") + fmt(variance) : "—"}</td>
-        <td style="padding:4px 8px;text-align:right">${fmtC(b.totalEarnings)}</td>
-      </tr></tbody></table>`;
+    } catch { /* ignore — proceed without logo */ }
+
+    function varColor(v: number, prescribed: number) {
+      if (prescribed === 0) return "#9ca3af";
+      if (v > 0)  return "#dc2626";
+      if (v < 0)  return "#d97706";
+      return "#16a34a";
     }
-    openPrintWindow(body, "Block Summary");
-    setOpenExport(null);
+    function varCell(v: number, prescribed: number) {
+      if (prescribed === 0) return "—";
+      return `${v >= 0 ? "+" : ""}${fmt(v)}`;
+    }
+
+    const blockSections = blocks.map(b => `
+      <div class="block-section">
+        <div class="block-header">
+          <div class="block-title">${b.block}${b.project && b.project !== "(No Project)" ? ` <span class="block-sub">· ${b.project}</span>` : ""}</div>
+          <div class="block-stats">
+            <span><b>${b.planters}</b> planter${b.planters !== 1 ? "s" : ""}</span>
+            ${b.prescribed > 0 ? `<span>Prescribed <b>${fmt(b.prescribed)}</b></span>` : ""}
+            <span>Planted <b>${fmt(b.planted)}</b></span>
+            ${b.prescribed > 0 ? `<span style="color:${varColor(b.variance, b.prescribed)};font-weight:600">${varCell(b.variance, b.prescribed)} (${b.variancePct >= 0 ? "+" : ""}${b.variancePct.toFixed(1)}%)</span>` : ""}
+            <span><b>${fmtC(b.earnings)}</b></span>
+          </div>
+        </div>
+        <table class="species">
+          <thead><tr>
+            <th>Species</th><th>Code</th>
+            <th class="r">Prescribed</th><th class="r">Planted</th>
+            <th class="r">Variance</th><th class="r">Earnings</th>
+          </tr></thead>
+          <tbody>
+            ${b.speciesRows.map(r => `<tr>
+              <td>${r.species}</td>
+              <td class="code">${r.code}</td>
+              <td class="r">${r.prescribed > 0 ? fmt(r.prescribed) : "—"}</td>
+              <td class="r">${fmt(r.planted)}</td>
+              <td class="r" style="color:${varColor(r.variance, r.prescribed)};font-weight:600">${varCell(r.variance, r.prescribed)}</td>
+              <td class="r">${fmtC(r.earnings)}</td>
+            </tr>`).join("")}
+            <tr class="total-row">
+              <td colspan="2">Total</td>
+              <td class="r">${b.prescribed > 0 ? fmt(b.prescribed) : "—"}</td>
+              <td class="r">${fmt(b.planted)}</td>
+              <td class="r" style="color:${varColor(b.variance, b.prescribed)}">${varCell(b.variance, b.prescribed)}</td>
+              <td class="r">${fmtC(b.earnings)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    `).join("");
+
+    const dateLabel = dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`;
+    const generated = new Date().toLocaleDateString("en-CA");
+
+    const docHtml = `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/><title>Block Summary — ${projectName} — ${dateLabel}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #111827; background: #fff; padding: 32px 40px; max-width: 860px; margin: 0 auto; }
+  .report-header { display: flex; align-items: center; gap: 18px; padding-bottom: 16px; border-bottom: 2px solid #14532d; margin-bottom: 22px; }
+  .report-header img { height: 56px; width: auto; }
+  .report-header .head-text { flex: 1; }
+  .report-header h1 { color: #14532d; font-size: 20px; font-weight: 800; }
+  .report-header .subtitle { color: #6b7280; font-size: 11px; margin-top: 2px; }
+  .report-header .company { text-align: right; font-size: 10px; color: #6b7280; line-height: 1.4; }
+  .report-header .company b { color: #14532d; font-size: 11px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 22px; }
+  .kpi { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; background: #fafafa; }
+  .kpi.accent { background: #14532d; border-color: #14532d; color: #fff; }
+  .kpi .label { font-size: 8px; text-transform: uppercase; letter-spacing: .1em; font-weight: 700; color: #9ca3af; }
+  .kpi.accent .label { color: #4ade80; }
+  .kpi .value { font-size: 16px; font-weight: 800; color: #111827; margin-top: 3px; }
+  .kpi.accent .value { color: #fff; }
+  .kpi .sub { font-size: 9px; color: #6b7280; margin-top: 2px; }
+  .kpi.accent .sub { color: #86efac; }
+  .block-section { margin-bottom: 18px; page-break-inside: avoid; }
+  .block-header { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #14532d; border-radius: 4px; margin-bottom: 0; gap: 14px; flex-wrap: wrap; }
+  .block-title { font-size: 13px; font-weight: 800; color: #14532d; }
+  .block-sub { font-size: 10px; font-weight: 500; color: #4b5563; }
+  .block-stats { font-size: 10px; color: #4b5563; display: flex; gap: 12px; flex-wrap: wrap; }
+  .block-stats b { color: #111827; }
+  table.species { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.species thead th { background: #14532d; color: #ffffff; padding: 6px 8px; text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .03em; }
+  table.species thead th.r { text-align: right; }
+  table.species tbody td { padding: 5px 8px; border-bottom: 1px solid #f3f4f6; font-variant-numeric: tabular-nums; }
+  table.species tbody td.r { text-align: right; }
+  table.species tbody td.code { font-family: ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #374151; }
+  table.species tr.total-row td { background: #f9fafb; font-weight: 700; border-top: 1px solid #d1d5db; }
+  .footer { display: flex; justify-content: space-between; margin-top: 24px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 10px; color: #9ca3af; }
+</style></head><body>
+
+<div class="report-header">
+  ${logoSrc ? `<img src="${logoSrc}" alt="Integrity Reforestation"/>` : ""}
+  <div class="head-text">
+    <h1>Block Summary</h1>
+    <div class="subtitle">${projectName} · ${dateLabel} · ${blocks.length} block${blocks.length !== 1 ? "s" : ""}</div>
+  </div>
+  <div class="company">
+    <b>Integrity Reforestation</b><br/>
+    Production Report<br/>
+    Generated ${generated}
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <div class="kpi accent"><div class="label">Total Planted</div><div class="value">${fmt(totalPlanted)}</div><div class="sub">trees</div></div>
+  <div class="kpi"><div class="label">Prescribed</div><div class="value">${totalPrescribed > 0 ? fmt(totalPrescribed) : "—"}</div><div class="sub">${totalPrescribed > 0 ? "trees target" : "no target"}</div></div>
+  <div class="kpi"><div class="label">Variance</div><div class="value" style="color:${varColor(totalVariance, totalPrescribed)}">${totalPrescribed > 0 ? (totalVariance >= 0 ? "+" : "") + fmt(totalVariance) : "—"}</div><div class="sub">${totalPrescribed > 0 ? `${totalVariancePct >= 0 ? "+" : ""}${totalVariancePct.toFixed(1)}%` : "—"}</div></div>
+  <div class="kpi"><div class="label">Earnings</div><div class="value">${fmtC(totalEarnings)}</div><div class="sub">across all blocks</div></div>
+  <div class="kpi"><div class="label">Planters</div><div class="value">${totalPlanters}</div><div class="sub">distinct</div></div>
+</div>
+
+${blockSections}
+
+<div class="footer">
+  <span>Integrity Reforestation · Block Summary</span>
+  <span>${projectName} · ${dateLabel}</span>
+</div>
+</body></html>`;
+
+    const blob = await renderHtmlToPdfBlob(docHtml);
+    if (!blob) {
+      alert("Couldn't generate the PDF. Check the console for details.");
+      return;
+    }
+    const safeProject = projectName.replace(/[^\w-]+/g, "_");
+    const safeRange   = (dateFrom === dateTo ? dateFrom : `${dateFrom}_to_${dateTo}`).replace(/[^\w-]+/g, "_");
+    triggerBlobDownloadGlobal(blob, `Block-Summary-${safeProject}-${safeRange}.pdf`);
   }
 
   function buildClientBlocks(range?: { from: string; to: string }) {
@@ -7229,7 +7429,7 @@ ${dailySection}
                           <span className="text-text-tertiary">↓</span> Export CSV
                         </button>
                         <button onClick={printBlockSummary} className="w-full text-left px-4 py-2.5 text-xs text-text-primary hover:bg-surface-secondary transition-colors flex items-center gap-2">
-                          <span className="text-text-tertiary">⎙</span> Print / PDF
+                          <span className="text-text-tertiary">↓</span> Download PDF
                         </button>
                       </div>
                     )}
