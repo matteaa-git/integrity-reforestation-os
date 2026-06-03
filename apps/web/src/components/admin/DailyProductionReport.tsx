@@ -485,6 +485,10 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     additionalEarnings: string; notes: string;
   }[]>([]);
 
+  // Bulk camp-cost input on the Earnings & Deductions tab.
+  const [bulkCampCost, setBulkCampCost] = useState<string>("");
+  const [bulkCampMode, setBulkCampMode] = useState<"flat" | "perDay">("perDay");
+
   // Tree transfers
   const [transfers, setTransfers]       = useState<TreeTransfer[]>([]);
   const [xfrDate, setXfrDate]           = useState(todayStr());
@@ -5896,12 +5900,75 @@ ${dailySection}
         )}
 
         {/* ────────────────────────────── SUMMARY ─────────────────────────── */}
-        {tab === "summary" && (
+        {tab === "summary" && (() => {
+          // Apply the bulk camp-cost amount to every planter, crew boss, and
+          // hourly worker's campCosts field. "Flat" sets the same dollar value
+          // on every row; "perDay" multiplies by each planter's days.size
+          // (planters) or uses the flat value for crew bosses + hourly (since
+          // those don't carry a day count in the deductions table).
+          function applyBulkCampCost() {
+            const amount = parseFloat(bulkCampCost) || 0;
+            if (amount <= 0) return;
+            setPlanterDeds(prev => {
+              const next: typeof prev = { ...prev };
+              for (const p of planterSummary) {
+                const existing = prev[p.name] ?? { campCosts: "", equipDeduction: "", other: "", cpp: "", ei: "", incomeTax: "", additionalEarnings: "", notes: "" };
+                const val = bulkCampMode === "perDay"
+                  ? (amount * p.days.size).toFixed(2)
+                  : amount.toFixed(2);
+                next[p.name] = { ...existing, campCosts: val };
+              }
+              return next;
+            });
+            setCrewDeds(prev => {
+              const next: typeof prev = { ...prev };
+              for (const c of crewSummary) {
+                const existing = prev[c.crew] ?? { campCosts: "", equipDeduction: "", other: "", incomeTax: "", hours: "", additionalEarnings: "", notes: "" };
+                next[c.crew] = { ...existing, campCosts: amount.toFixed(2) };
+              }
+              return next;
+            });
+            setHourlyEmps(prev => prev.map(emp => ({ ...emp, campCosts: amount.toFixed(2) })));
+          }
+
+          return (
           <div className="max-w-7xl mx-auto space-y-5">
             <FilterBar />
 
-            {/* ADP Export */}
-            <div className="flex justify-end">
+            {/* Top toolbar: bulk camp cost + ADP export */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Bulk camp cost */}
+              <div className="flex items-center gap-2 bg-surface border border-border rounded-lg px-3 py-1.5">
+                <span className="text-[10px] uppercase tracking-widest font-semibold text-text-tertiary">Camp Cost</span>
+                <div className="flex items-center gap-1 text-sm font-semibold text-text-primary">
+                  <span className="text-text-tertiary">$</span>
+                  <input
+                    type="number" min="0" step="0.01" placeholder="0.00"
+                    value={bulkCampCost}
+                    onChange={e => setBulkCampCost(e.target.value)}
+                    className="w-20 bg-surface-secondary border border-border rounded px-2 py-1 text-right text-xs text-text-primary focus:outline-none focus:border-primary/50 focus:bg-surface"
+                  />
+                </div>
+                <select
+                  value={bulkCampMode}
+                  onChange={e => setBulkCampMode(e.target.value as "flat" | "perDay")}
+                  className="bg-surface-secondary border border-border rounded px-2 py-1 text-[11px] text-text-secondary focus:outline-none focus:border-primary/50"
+                  title={bulkCampMode === "perDay" ? "Multiplies the amount by each planter's days worked" : "Sets every row to the same flat amount"}
+                >
+                  <option value="perDay">/ day × days</option>
+                  <option value="flat">flat</option>
+                </select>
+                <button
+                  onClick={applyBulkCampCost}
+                  disabled={!bulkCampCost || parseFloat(bulkCampCost) <= 0}
+                  className="text-[11px] font-semibold px-3 py-1 rounded border border-primary/50 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Apply this camp cost to every planter, crew boss, and hourly worker in the table — overwrites existing values"
+                >
+                  Apply to all
+                </button>
+              </div>
+
+              {/* ADP Export */}
               <button
                 onClick={generateADPCSV}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary bg-surface transition-colors">
@@ -6898,7 +6965,8 @@ ${dailySection}
 
             </div>
           </div>
-        )}
+          );
+        })()}
 
         {/* ────────────────────────────── RATES ───────────────────────────── */}
         {tab === "rates" && (
