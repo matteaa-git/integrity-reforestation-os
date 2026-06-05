@@ -17,6 +17,12 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Surface the commit sha + build time so the in-app diagnostic page can
+  // tell us which version is actually running on a given device.
+  env: {
+    NEXT_PUBLIC_BUILD_SHA:  process.env.VERCEL_GIT_COMMIT_SHA  ?? "local",
+    NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
+  },
 };
 
 module.exports = withSerwist(nextConfig);

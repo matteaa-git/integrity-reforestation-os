@@ -1557,6 +1557,24 @@ ${blockSections}
     // Keep date/crew/project/camp for next session, clear block/notes
     setSession(s => ({ ...s, block: "", notes: "" }));
     setSaving(false);
+
+    // Persist a breadcrumb of the most recent save attempt so the /admin
+    // Sync Status page (and future me) can see what happened without
+    // needing browser DevTools — useful on iPad where console is unreachable.
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("last_save_result", JSON.stringify({
+          at: new Date().toISOString(),
+          sessionDate: session.date,
+          crewBoss: session.crewBoss,
+          totalAttempted: newEntries.length,
+          successCount: newEntries.length - failed.length,
+          failedCount: failed.length,
+          failed,
+        }));
+      } catch { /* localStorage full or disabled — non-fatal */ }
+    }
+
     if (failed.length > 0) {
       alert(
         `Saved locally — ${failed.length} entr${failed.length === 1 ? "y" : "ies"} couldn't reach the server and ` +
