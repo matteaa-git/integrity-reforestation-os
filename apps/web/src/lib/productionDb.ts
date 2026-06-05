@@ -72,12 +72,32 @@ async function sbGetAll<T>(storeName: string): Promise<T[]> {
   // Online: try Supabase first, refresh cache, fall back to cache on error
   // (covers navigator.onLine lying — e.g. captive-portal WiFi).
   try {
-    const { data, error } = await sb()
-      .from(APP_DATA_TABLE)
-      .select("data")
-      .eq("table_name", storeName);
-    if (error) throw error;
-    const records = (data ?? []).map((r) => r.data as T);
+    // PostgREST caps a single response at 1000 rows by default. Once a
+    // table crosses 1000 records (production_entries hit this around
+    // 2026-06-03), an un-paginated query silently truncates and new
+    // entries appear "lost" even though they're in Supabase. Page
+    // through with .range() until we get a short page back.
+    const PAGE_SIZE = 1000;
+    const records: T[] = [];
+    let from = 0;
+    while (true) {
+      const { data, error } = await sb()
+        .from(APP_DATA_TABLE)
+        .select("data")
+        .eq("table_name", storeName)
+        .range(from, from + PAGE_SIZE - 1);
+      if (error) throw error;
+      const rows = data ?? [];
+      for (const r of rows) records.push(r.data as T);
+      if (rows.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+      // Safety stop in case something pathological happens — 200k rows
+      // is well past what any one table should reach.
+      if (from > 200_000) {
+        console.warn("[productionDb] sbGetAll exceeded 200k rows for", storeName, "— stopping pagination");
+        break;
+      }
+    }
 
     // Preserve unsynced local writes — if a record is still in the queue,
     // it hasn't reached the server yet, so we keep the local version and
