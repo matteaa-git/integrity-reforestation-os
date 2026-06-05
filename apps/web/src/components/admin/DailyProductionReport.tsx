@@ -2570,7 +2570,9 @@ ${blockSections}
         if (e.block)   rec.blocks.add(e.block);
         if (e.project) rec.projects.add(e.project);
         rec.trees    += e.totalTrees;
-        rec.hours    += e.hoursWorked;
+        // Hours: max per date — two entries on the same day (different blocks)
+        // shouldn't double the planter's hours for that day.
+        rec.hours     = Math.max(rec.hours, e.hoursWorked);
         rec.earnings += e.totalEarnings;
         byDate.set(e.date, rec);
       }
@@ -6324,7 +6326,9 @@ ${dailySection}
                                           if (e.block)   rec.blocks.add(e.block);
                                           if (e.project) rec.projects.add(e.project);
                                           rec.trees    += e.totalTrees;
-                                          rec.hours    += e.hoursWorked;
+                                          // Hours: max per date so same-day entries on different blocks
+                                          // don't double-count for the day.
+                                          rec.hours     = Math.max(rec.hours, e.hoursWorked);
                                           rec.earnings += e.totalEarnings;
                                           byDate.set(e.date, rec);
                                         }
