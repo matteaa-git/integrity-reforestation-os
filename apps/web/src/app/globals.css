@@ -58,3 +58,8 @@ body {
   -ms-overflow-style: none;
   &::-webkit-scrollbar { display: none; }
 }
+
+@keyframes stuck-pulse {
+  0%, 100% { transform: scale(1);    box-shadow: 0 8px 32px rgba(220, 38, 38, 0.5),  0 0 0 2px rgba(255, 255, 255, 0.4); }
+  50%      { transform: scale(1.04); box-shadow: 0 10px 40px rgba(220, 38, 38, 0.7), 0 0 0 3px rgba(255, 255, 255, 0.55); }
+}

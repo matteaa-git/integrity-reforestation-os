@@ -1501,6 +1501,7 @@ ${blockSections}
     if (!session.date || !session.crewBoss) return;
     setSaving(true);
     const newEntries: ProductionEntry[] = [];
+    const failed: { name: string; error: string }[] = [];
     const sst = sessionSpeciesTotals(planters);
 
     for (const p of planters) {
@@ -1538,7 +1539,16 @@ ${blockSections}
         vacPay,
         totalWithVac: totalEarnings,
       };
-      await saveRecord("production_entries", entry);
+      try {
+        await saveRecord("production_entries", entry);
+      } catch (err) {
+        // sbUpsert now queues every failed write before re-throwing, so the
+        // entry isn't lost — flag it so the user knows it's pending sync.
+        console.error("[handleSaveSession] save failed:", p.employeeName, err);
+        failed.push({ name: p.employeeName || "(unnamed planter)", error: (err as Error).message ?? String(err) });
+      }
+      // Always keep it in local state (the cache was updated; the queue will
+      // retry the server write on reconnect).
       newEntries.push(entry);
     }
 
@@ -1547,6 +1557,13 @@ ${blockSections}
     // Keep date/crew/project/camp for next session, clear block/notes
     setSession(s => ({ ...s, block: "", notes: "" }));
     setSaving(false);
+    if (failed.length > 0) {
+      alert(
+        `Saved locally — ${failed.length} entr${failed.length === 1 ? "y" : "ies"} couldn't reach the server and ` +
+        `will be retried automatically. Look for the "Syncing N changes…" indicator.\n\n` +
+        failed.map(f => `• ${f.name}: ${f.error}`).join("\n")
+      );
+    }
     showToast(`Saved ${newEntries.length} entr${newEntries.length !== 1 ? "ies" : "y"}`);
     if (newEntries.length > 0) {
       setDateFrom(session.date);

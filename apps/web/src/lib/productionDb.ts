@@ -78,8 +78,34 @@ async function sbGetAll<T>(storeName: string): Promise<T[]> {
       .eq("table_name", storeName);
     if (error) throw error;
     const records = (data ?? []).map((r) => r.data as T);
-    void setCachedAll(storeName, records as Array<T & { id: string }>);
-    return records;
+
+    // Preserve unsynced local writes — if a record is still in the queue,
+    // it hasn't reached the server yet, so we keep the local version and
+    // exclude the (possibly missing) server copy. Without this guard, a
+    // failed Supabase write would silently disappear on the next read when
+    // setCachedAll overwrites the cache.
+    const queued = await getQueuedWrites();
+    const pendingUpserts = queued.filter(q => q.table === storeName && q.op === "upsert");
+    const pendingDeletes = new Set(queued.filter(q => q.table === storeName && q.op === "delete").map(q => q.recordId));
+    const pendingMap = new Map<string, T>();
+    for (const q of pendingUpserts) {
+      if (q.data) pendingMap.set(q.recordId, q.data as T);
+    }
+    const merged: T[] = [];
+    for (const r of records) {
+      const id = (r as unknown as { id?: string }).id;
+      if (id && pendingDeletes.has(id)) continue;   // about-to-be-deleted, hide
+      if (id && pendingMap.has(id)) {
+        merged.push(pendingMap.get(id)!);            // local version wins
+        pendingMap.delete(id);
+      } else {
+        merged.push(r);
+      }
+    }
+    for (const r of pendingMap.values()) merged.push(r); // local-only inserts
+
+    void setCachedAll(storeName, merged as Array<T & { id: string }>);
+    return merged;
   } catch (err) {
     console.warn("[productionDb] read fell back to cache:", storeName, err);
     return getCachedAll<T>(storeName);
@@ -111,18 +137,18 @@ async function sbUpsert<T extends { id: string }>(
         { onConflict: "table_name,id" }
       );
     if (error) {
-      if (isNetworkError(error)) {
-        await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
-        return;
-      }
-      throw new Error(`[productionDb] upsert ${storeName}: ${error.message}`);
-    }
-  } catch (err) {
-    if (isNetworkError(err)) {
+      // Queue every failed write — even non-network failures (RLS hiccup,
+      // transient auth, etc.) — so a single bad request can't silently
+      // discard the user's data. The drainer retries on reconnect/focus.
       await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
+      if (!isNetworkError(error)) {
+        throw new Error(`[productionDb] upsert ${storeName}: ${error.message} (queued for retry)`);
+      }
       return;
     }
-    throw err;
+  } catch (err) {
+    await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
+    if (!isNetworkError(err)) throw err;
   }
 }
 
@@ -140,18 +166,15 @@ async function sbDelete(storeName: string, id: string): Promise<void> {
       .eq("table_name", storeName)
       .eq("id", id);
     if (error) {
-      if (isNetworkError(error)) {
-        await enqueueWrite({ table: storeName, recordId: id, op: "delete" });
-        return;
-      }
-      throw new Error(`[productionDb] delete ${storeName}: ${error.message}`);
-    }
-  } catch (err) {
-    if (isNetworkError(err)) {
       await enqueueWrite({ table: storeName, recordId: id, op: "delete" });
+      if (!isNetworkError(error)) {
+        throw new Error(`[productionDb] delete ${storeName}: ${error.message} (queued for retry)`);
+      }
       return;
     }
-    throw err;
+  } catch (err) {
+    await enqueueWrite({ table: storeName, recordId: id, op: "delete" });
+    if (!isNetworkError(err)) throw err;
   }
 }
 
