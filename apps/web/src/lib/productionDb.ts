@@ -125,7 +125,7 @@ async function sbUpsert<T extends { id: string }>(
     return;
   }
   try {
-    const { error } = await sb()
+    const { error, data } = await sb()
       .from(APP_DATA_TABLE)
       .upsert(
         {
@@ -135,18 +135,32 @@ async function sbUpsert<T extends { id: string }>(
           updated_at: new Date().toISOString(),
         },
         { onConflict: "table_name,id" }
-      );
+      )
+      .select("id");   // ← force the row back, so RLS-silently-filtered writes throw
+
     if (error) {
       // Queue every failed write — even non-network failures (RLS hiccup,
       // transient auth, etc.) — so a single bad request can't silently
       // discard the user's data. The drainer retries on reconnect/focus.
+      console.error("[productionDb] upsert error", storeName, record.id, error);
       await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
       if (!isNetworkError(error)) {
         throw new Error(`[productionDb] upsert ${storeName}: ${error.message} (queued for retry)`);
       }
       return;
     }
+    // Belt-and-braces: when `.select()` is chained after `.upsert()`, Supabase
+    // returns the rows visible to the caller post-write. If RLS silently
+    // filters the row out (PostgREST docs: "with check" failure with no
+    // RETURNING permission), `data` will be empty even though `error` is null.
+    // Treat that as a failure too — queue it.
+    if (!data || data.length === 0) {
+      console.error("[productionDb] upsert returned no rows (silently dropped?)", storeName, record.id);
+      await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
+      throw new Error(`[productionDb] upsert ${storeName} ${record.id}: row not visible after write — queued for retry`);
+    }
   } catch (err) {
+    console.error("[productionDb] upsert exception", storeName, record.id, err);
     await enqueueWrite({ table: storeName, recordId: record.id, op: "upsert", data: record });
     if (!isNetworkError(err)) throw err;
   }
@@ -184,7 +198,7 @@ async function sbDelete(storeName: string, id: string): Promise<void> {
 async function replayWrite(w: QueuedWrite): Promise<boolean> {
   try {
     if (w.op === "upsert") {
-      const { error } = await sb()
+      const { error, data } = await sb()
         .from(APP_DATA_TABLE)
         .upsert(
           {
@@ -196,8 +210,15 @@ async function replayWrite(w: QueuedWrite): Promise<boolean> {
             updated_at: new Date(w.enqueuedAt).toISOString(),
           },
           { onConflict: "table_name,id" }
-        );
+        )
+        .select("id");
       if (error) throw new Error(error.message);
+      // Empty return = RLS silently filtered the row. Don't dequeue — let
+      // it stay so the next drain (or fixed RLS policy) can replay it.
+      if (!data || data.length === 0) {
+        console.error("[productionDb] replay upsert returned no rows", w.table, w.recordId);
+        return false;
+      }
     } else if (w.op === "delete") {
       const { error } = await sb()
         .from(APP_DATA_TABLE)
