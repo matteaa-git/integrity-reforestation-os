@@ -411,7 +411,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     // Earnings
     totalTrees: number; crewTrees?: number; planterCount?: number;
     earnings: number; vacPay: number; totalWithVac: number; days: number;
-    speciesRows: { block: string; code: string; species: string; trees: number; earnings: number; ratePerTree: number }[];
+    speciesRows: { block: string; code: string; species: string; trees: number; earnings: number; ratePerTree: number; tierLabel?: string }[];
     dailyLog: { date: string; block: string; project: string; trees: number; hours: number; earnings: number }[];
     // Hourly/crew-boss specific
     rateType?: string; rate?: number; quantity?: number;
@@ -2251,9 +2251,12 @@ ${blockSections}
       // day (e.g. two blocks) don't double-count — we take the max for the
       // day, then sum the per-day values into totalHours below.
       hoursByDate: Map<string, number>;
-      // Per-planter breakdown keyed by `${block}|${species}` so the payroll
-      // statement can show which block each tree count belongs to.
-      speciesMap: Map<string, { block: string; species: string; code: string; trees: number; earnings: number }>;
+      // Per-planter breakdown keyed by `${block}|${species}|${ratePerTree}` so
+      // the payroll statement can show which block each tree count belongs to
+      // AND surface tiered pricing — when a planter earned multiple rates for
+      // the same species (e.g. some trees at the below-threshold $0.18 and
+      // some at the above-threshold $0.22), each rate shows up as its own row.
+      speciesMap: Map<string, { block: string; species: string; code: string; trees: number; earnings: number; ratePerTree: number }>;
     }>();
     for (const e of filtered) {
       const key = e.employeeId || e.employeeName;
@@ -2272,8 +2275,12 @@ ${blockSections}
       // for the same reason.
       const blockKey  = block.trim().toLowerCase();
       for (const l of e.production) {
-        const k = `${blockKey}|${l.speciesId}`;
-        const s = rec.speciesMap.get(k) ?? { block, species: l.species, code: l.code, trees: 0, earnings: 0 };
+        // Include ratePerTree in the key (rounded to 4 dp to dodge float noise)
+        // so the same species+block planted at two different rates produces
+        // two breakdown rows instead of being averaged into one.
+        const rateKey = l.ratePerTree.toFixed(4);
+        const k = `${blockKey}|${l.speciesId}|${rateKey}`;
+        const s = rec.speciesMap.get(k) ?? { block, species: l.species, code: l.code, trees: 0, earnings: 0, ratePerTree: l.ratePerTree };
         s.trees += l.trees; s.earnings += l.earnings;
         rec.speciesMap.set(k, s);
       }
@@ -2668,10 +2675,35 @@ ${blockSections}
     const prevAvgHourly = prev && prev.hours > 0 ? prev.withVac / prev.hours : null;
     const otPay     = otHours > 0 && prevAvgHourly != null ? otHours * 1.5 * prevAvgHourly : null;
 
-    const speciesRows = [...p.speciesMap.values()].map(s => ({
-      block: s.block, species: s.species, code: s.code, trees: s.trees, earnings: s.earnings,
-      ratePerTree: s.trees > 0 ? s.earnings / s.trees : 0,
-    })).sort((a, b) => a.block.localeCompare(b.block) || b.trees - a.trees);
+    const speciesRows = [...p.speciesMap.values()].map(s => {
+      // Annotate tiered rates so the breakdown makes obvious which trees
+      // were earned at which price. Look up the species rate by code (rate
+      // codes are unique per the rates editor) and compare the stored
+      // per-tree rate against the tier's below/above values.
+      const rate = rates.find(r => r.code === s.code);
+      let tierLabel: string | undefined;
+      if (rate?.rateType === "tiered" && rate.tierThreshold != null
+          && rate.rateBelowThreshold != null && rate.rateAboveThreshold != null) {
+        const EPS = 0.0001;
+        if (Math.abs(s.ratePerTree - rate.rateAboveThreshold) < EPS) {
+          tierLabel = `above ${fmt(rate.tierThreshold)}`;
+        } else if (Math.abs(s.ratePerTree - rate.rateBelowThreshold) < EPS) {
+          tierLabel = `below ${fmt(rate.tierThreshold)}`;
+        }
+      }
+      return {
+        block: s.block, species: s.species, code: s.code, trees: s.trees, earnings: s.earnings,
+        // Use the stored rate, not earnings/trees — when rows are split by rate
+        // (tiered pricing), the stored rate is the true per-tree price; the
+        // averaged value would lie about which tier this row represents.
+        ratePerTree: s.ratePerTree,
+        tierLabel,
+      };
+    }).sort((a, b) =>
+      a.block.localeCompare(b.block)
+      || a.code.localeCompare(b.code)
+      || b.ratePerTree - a.ratePerTree   // higher tier rate shown first
+      || b.trees - a.trees);
 
     const planterEntries = filtered.filter(e => e.employeeName === p.name || e.employeeId === empKey);
     // Collapse same-date entries into a single log row.
@@ -2709,7 +2741,7 @@ ${blockSections}
       totalTrees: p.totalTrees, earnings: p.totalEarnings,
       vacPay: p.totalWithVac - p.totalEarnings,
       totalWithVac: p.totalWithVac, days: p.days.size,
-      speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree })),
+      speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree, tierLabel: s.tierLabel })),
       dailyLog: dailyLogRows,
       campCosts: camp, equipDeduction: equip, other, gross,
       hours, hourlyEarned, topUp, ytd,
@@ -2738,7 +2770,7 @@ ${blockSections}
              <td style="padding:6px 10px;font-family:monospace;font-weight:700;color:#374151">${s.code}</td>
              <td style="padding:6px 10px">${s.species}</td>
              <td style="padding:6px 10px;text-align:right;font-weight:600">${fmt(s.trees)}</td>
-             <td style="padding:6px 10px;text-align:right;color:#6b7280">$${s.ratePerTree.toFixed(4)}</td>
+             <td style="padding:6px 10px;text-align:right;color:#6b7280">$${s.ratePerTree.toFixed(4)}${s.tierLabel ? `<span style="margin-left:6px;font-size:10px;color:#9ca3af">(${s.tierLabel})</span>` : ""}</td>
              <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtC(s.earnings)}</td>
            </tr>`).join("")}</tbody>
            <tfoot><tr style="background:#f9fafb;border-top:2px solid #d1d5db">
@@ -6322,14 +6354,36 @@ ${dailySection}
                             const net    = gross + addl - cpp - ei - tax;
                             const avgDay = p.days.size > 0 ? Math.round(p.totalTrees / p.days.size) : 0;
                             const isExpanded = expandedPlanters.has(p.name);
-                            const speciesRows = [...p.speciesMap.values()].map(s => ({
-                              block: s.block,
-                              species: s.species,
-                              code: s.code,
-                              trees: s.trees,
-                              earnings: s.earnings,
-                              ratePerTree: s.trees > 0 ? s.earnings / s.trees : 0,
-                            })).sort((a, b) => a.block.localeCompare(b.block) || b.trees - a.trees);
+                            const speciesRows = [...p.speciesMap.values()].map(s => {
+                              // Tiered-rate annotation — match this row's
+                              // stored rate against the species' tier config
+                              // so the breakdown shows "below 1500" /
+                              // "above 1500" alongside the $/tree value.
+                              const rate = rates.find(r => r.code === s.code);
+                              let tierLabel: string | undefined;
+                              if (rate?.rateType === "tiered" && rate.tierThreshold != null
+                                  && rate.rateBelowThreshold != null && rate.rateAboveThreshold != null) {
+                                const EPS = 0.0001;
+                                if (Math.abs(s.ratePerTree - rate.rateAboveThreshold) < EPS) {
+                                  tierLabel = `above ${fmt(rate.tierThreshold)}`;
+                                } else if (Math.abs(s.ratePerTree - rate.rateBelowThreshold) < EPS) {
+                                  tierLabel = `below ${fmt(rate.tierThreshold)}`;
+                                }
+                              }
+                              return {
+                                block: s.block,
+                                species: s.species,
+                                code: s.code,
+                                trees: s.trees,
+                                earnings: s.earnings,
+                                ratePerTree: s.ratePerTree,
+                                tierLabel,
+                              };
+                            }).sort((a, b) =>
+                              a.block.localeCompare(b.block)
+                              || a.code.localeCompare(b.code)
+                              || b.ratePerTree - a.ratePerTree
+                              || b.trees - a.trees);
 
                             function toggleExpand() {
                               setExpandedPlanters(prev => {
@@ -6490,7 +6544,7 @@ ${dailySection}
                                         totalTrees: p.totalTrees, earnings: p.totalEarnings,
                                         vacPay: p.totalWithVac - p.totalEarnings,
                                         totalWithVac: p.totalWithVac, days: p.days.size,
-                                        speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree })),
+                                        speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree, tierLabel: s.tierLabel })),
                                         dailyLog: dailyLogRows,
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
@@ -6523,12 +6577,15 @@ ${dailySection}
                                         </tr>
                                       </thead>
                                       <tbody>
-                                        {speciesRows.map(s => (
-                                          <tr key={s.species} className="border-b border-border/30 last:border-b-0">
+                                        {speciesRows.map((s, i) => (
+                                          <tr key={`${s.block}|${s.code}|${s.ratePerTree.toFixed(4)}|${i}`} className="border-b border-border/30 last:border-b-0">
                                             <td className="py-1 pr-4 font-mono font-bold text-text-primary">{s.code}</td>
                                             <td className="py-1 pr-4 text-text-secondary">{s.species}</td>
                                             <td className="py-1 pr-4 text-right font-semibold text-text-primary">{fmt(s.trees)}</td>
-                                            <td className="py-1 pr-4 text-right text-text-secondary">${s.ratePerTree.toFixed(4)}</td>
+                                            <td className="py-1 pr-4 text-right text-text-secondary">
+                                              ${s.ratePerTree.toFixed(4)}
+                                              {s.tierLabel && <span className="ml-1 text-[10px] text-text-tertiary font-normal">({s.tierLabel})</span>}
+                                            </td>
                                             <td className="py-1 text-right font-bold" style={{ color: "var(--color-primary)" }}>{fmtC(s.earnings)}</td>
                                           </tr>
                                         ))}
@@ -9147,12 +9204,15 @@ ${dailySection}
                         </tr></thead>
                         <tbody className="divide-y divide-gray-100">
                           {r.speciesRows.map((s, i) => (
-                            <tr key={`${s.block}|${s.code}|${i}`}>
+                            <tr key={`${s.block}|${s.code}|${s.ratePerTree.toFixed(4)}|${i}`}>
                               <td className="px-3 py-2 text-gray-700">{s.block}</td>
                               <td className="px-3 py-2 font-mono font-bold text-gray-700">{s.code}</td>
                               <td className="px-3 py-2 text-gray-600">{s.species}</td>
                               <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(s.trees)}</td>
-                              <td className="px-3 py-2 text-right text-gray-500 tabular-nums">${s.ratePerTree.toFixed(4)}</td>
+                              <td className="px-3 py-2 text-right text-gray-500 tabular-nums">
+                                ${s.ratePerTree.toFixed(4)}
+                                {s.tierLabel && <span className="ml-1 text-[10px] text-gray-400 font-normal">({s.tierLabel})</span>}
+                              </td>
                               <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtC(s.earnings)}</td>
                             </tr>
                           ))}
