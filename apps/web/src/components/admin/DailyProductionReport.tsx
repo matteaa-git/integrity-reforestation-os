@@ -276,6 +276,37 @@ interface SavedSession {
   planters: DraftPlanter[];
 }
 
+// Snapshot of an in-progress Earnings & Deductions worksheet. Lets users
+// pause partway through a payroll (e.g. enter half the camp costs, then
+// jump to Production Reports to verify hours) and come back to exactly
+// where they left off — for a single user or another admin on a
+// different device, since the draft lives in Supabase via app_data.
+interface PayrollDraft {
+  id: string;
+  name: string;
+  savedAt: string;
+  dateFrom: string;
+  dateTo: string;
+  crewFilter: string;
+  projectFilter: string;
+  planterFilter: string;
+  planterDeds: Record<string, {
+    campCosts: string; equipDeduction: string; other: string;
+    cpp: string; ei: string; incomeTax: string;
+    additionalEarnings: string; notes: string;
+  }>;
+  crewDeds: Record<string, {
+    campCosts: string; equipDeduction: string; other: string; incomeTax: string; hours: string;
+    additionalEarnings: string; notes: string;
+  }>;
+  hourlyEmps: {
+    id: string; name: string; rateType: "hourly" | "dayrate";
+    rate: string; quantity: string; hours: string;
+    campCosts: string; equipDeduction: string; other: string; incomeTax: string;
+    additionalEarnings: string; notes: string;
+  }[];
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 
 interface Props { employees: Employee[]; userRole?: string; userName?: string }
@@ -305,6 +336,12 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [showSaveAsModal, setShowSaveAsModal] = useState(false);
   const [showOpenModal, setShowOpenModal]     = useState(false);
   const [saveAsName, setSaveAsName]           = useState("");
+
+  // Earnings & Deductions: payroll work-in-progress drafts.
+  const [payrollDrafts, setPayrollDrafts]               = useState<PayrollDraft[]>([]);
+  const [showSavePayrollModal, setShowSavePayrollModal] = useState(false);
+  const [showOpenPayrollModal, setShowOpenPayrollModal] = useState(false);
+  const [savePayrollName, setSavePayrollName]           = useState("");
 
   // Inline cell editing (Daily Log)
   const [editingCell, setEditingCell] = useState<{
@@ -573,6 +610,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     getAllRecords<SavedSession>("session_drafts").then(saved => {
       setSavedSessions(saved.sort((a, b) => b.savedAt.localeCompare(a.savedAt)));
     });
+    getAllRecords<PayrollDraft>("payroll_drafts").then(saved => {
+      setPayrollDrafts(saved.sort((a, b) => b.savedAt.localeCompare(a.savedAt)));
+    });
     getSupervisorDeliveries().then(saved => {
       setDeliveries(saved.sort((a, b) => b.date.localeCompare(a.date)));
     });
@@ -758,6 +798,43 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   async function handleDeleteSavedSession(id: string) {
     await deleteRecord("session_drafts", id);
     setSavedSessions(prev => prev.filter(s => s.id !== id));
+  }
+
+  // ── Payroll Draft Save / Open ──────────────────────────────────────────
+
+  async function handleSavePayrollAs() {
+    const name = savePayrollName.trim();
+    if (!name) return;
+    const draft: PayrollDraft = {
+      id: `pd-${uid()}`,
+      name,
+      savedAt: new Date().toISOString(),
+      dateFrom, dateTo, crewFilter, projectFilter, planterFilter,
+      planterDeds, crewDeds, hourlyEmps,
+    };
+    await saveRecord("payroll_drafts", draft);
+    setPayrollDrafts(prev => [draft, ...prev]);
+    setShowSavePayrollModal(false);
+    setSavePayrollName("");
+    showToast(`Payroll draft saved as "${draft.name}"`);
+  }
+
+  function handleOpenPayrollDraft(draft: PayrollDraft) {
+    setDateFrom(draft.dateFrom);
+    setDateTo(draft.dateTo);
+    setCrewFilter(draft.crewFilter);
+    setProjectFilter(draft.projectFilter);
+    setPlanterFilter(draft.planterFilter);
+    setPlanterDeds(draft.planterDeds);
+    setCrewDeds(draft.crewDeds);
+    setHourlyEmps(draft.hourlyEmps);
+    setShowOpenPayrollModal(false);
+    showToast(`Loaded payroll draft "${draft.name}"`);
+  }
+
+  async function handleDeletePayrollDraft(id: string) {
+    await deleteRecord("payroll_drafts", id);
+    setPayrollDrafts(prev => prev.filter(d => d.id !== id));
   }
 
   // ── Export ─────────────────────────────────────────────────────────────
@@ -6060,13 +6137,38 @@ ${dailySection}
                 </button>
               </div>
 
-              {/* ADP Export */}
-              <button
-                onClick={generateADPCSV}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary bg-surface transition-colors">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-                Export ADP CSV
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Save / Open payroll draft */}
+                <button
+                  onClick={() => setShowSavePayrollModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary bg-surface transition-colors"
+                  title="Save this payroll work-in-progress so you can pick it up later"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
+                  Save Draft
+                </button>
+                <button
+                  onClick={() => setShowOpenPayrollModal(true)}
+                  className="relative flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary bg-surface transition-colors"
+                  title="Open a previously saved payroll draft"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7h4l2-2h10a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+                  Open Draft
+                  {payrollDrafts.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-primary text-[9px] font-bold text-primary-deep flex items-center justify-center" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+                      {payrollDrafts.length}
+                    </span>
+                  )}
+                </button>
+
+                {/* ADP Export */}
+                <button
+                  onClick={generateADPCSV}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary bg-surface transition-colors">
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                  Export ADP CSV
+                </button>
+              </div>
             </div>
 
             {/* Global KPIs */}
@@ -8417,6 +8519,94 @@ ${dailySection}
             </div>
             <div className="flex justify-end px-6 py-4 border-t border-border">
               <button onClick={() => setShowOpenModal(false)} className="px-4 py-2 text-xs font-medium text-text-secondary border border-border rounded-lg hover:bg-surface-secondary transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Save Payroll Draft Modal ───────────────────────────────────────── */}
+      {showSavePayrollModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-sm mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="text-sm font-semibold text-text-primary">Save Payroll Draft</div>
+              <button onClick={() => setShowSavePayrollModal(false)} className="text-text-tertiary hover:text-text-primary text-lg leading-none">×</button>
+            </div>
+            <div className="p-6">
+              <label className={labelCls}>Draft Name *</label>
+              <input
+                autoFocus
+                value={savePayrollName}
+                onChange={e => setSavePayrollName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleSavePayrollAs()}
+                placeholder={`e.g. Payroll ${dateFrom} → ${dateTo}`}
+                className={inputCls}
+              />
+              <div className="text-[11px] text-text-tertiary mt-2">
+                Captures the current period, filters, and every deduction / hourly row so you can pick this payroll up exactly where you left off.
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+              <button onClick={() => setShowSavePayrollModal(false)} className="px-4 py-2 text-xs font-medium text-text-secondary border border-border rounded-lg hover:bg-surface-secondary transition-colors">Cancel</button>
+              <button onClick={handleSavePayrollAs} disabled={!savePayrollName.trim()}
+                className="px-4 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Open Payroll Draft Modal ───────────────────────────────────────── */}
+      {showOpenPayrollModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-md mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="text-sm font-semibold text-text-primary">Open Payroll Draft</div>
+              <button onClick={() => setShowOpenPayrollModal(false)} className="text-text-tertiary hover:text-text-primary text-lg leading-none">×</button>
+            </div>
+            <div className="max-h-[420px] overflow-y-auto">
+              {payrollDrafts.length === 0 ? (
+                <div className="px-6 py-10 text-center text-xs text-text-tertiary">No saved payroll drafts yet</div>
+              ) : (
+                <div className="divide-y divide-border/40">
+                  {payrollDrafts.map(d => {
+                    const planters = Object.keys(d.planterDeds).length;
+                    const crews    = Object.keys(d.crewDeds).length;
+                    const hourly   = d.hourlyEmps.length;
+                    return (
+                      <div key={d.id} className="flex items-center gap-3 px-6 py-3 hover:bg-surface-secondary/40 group">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-semibold text-text-primary truncate">{d.name}</div>
+                          <div className="text-[11px] text-text-tertiary mt-0.5">
+                            {d.dateFrom} → {d.dateTo}
+                            {planters > 0 && ` · ${planters} planter${planters !== 1 ? "s" : ""}`}
+                            {crews    > 0 && ` · ${crews} crew boss${crews    !== 1 ? "es" : ""}`}
+                            {hourly   > 0 && ` · ${hourly} hourly`}
+                          </div>
+                          <div className="text-[10px] text-text-tertiary/70 mt-0.5">Saved {new Date(d.savedAt).toLocaleString()}</div>
+                        </div>
+                        <button
+                          onClick={() => handleOpenPayrollDraft(d)}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg hover:opacity-90 transition-all shrink-0" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                        >
+                          Open
+                        </button>
+                        <button
+                          onClick={() => handleDeletePayrollDraft(d.id)}
+                          className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-red-400 text-sm font-bold transition-all shrink-0"
+                          title="Delete draft"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end px-6 py-4 border-t border-border">
+              <button onClick={() => setShowOpenPayrollModal(false)} className="px-4 py-2 text-xs font-medium text-text-secondary border border-border rounded-lg hover:bg-surface-secondary transition-colors">Close</button>
             </div>
           </div>
         </div>
