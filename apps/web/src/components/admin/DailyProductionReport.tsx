@@ -8972,6 +8972,40 @@ ${dailySection}
                   </div>
                 )}
 
+                {/* Daily Production Log (planters only) — mirrors the PDF section */}
+                {r.type === "planter" && r.dailyLog.length > 0 && (
+                  <div>
+                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Daily Production Log</div>
+                    <div className="border border-gray-200 rounded-xl overflow-hidden">
+                      <table className="w-full text-xs">
+                        <thead><tr className="border-b border-gray-200 bg-gray-50">
+                          {["Date","Block","Project","Trees","Hours","Earnings"].map(h => <th key={h} className="px-3 py-2 text-[9px] uppercase tracking-widest font-semibold text-gray-400 text-right first:text-left">{h}</th>)}
+                        </tr></thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {r.dailyLog.map((d, i) => (
+                            <tr key={`${d.date}|${d.block}|${i}`}>
+                              <td className="px-3 py-2 text-gray-700 whitespace-nowrap tabular-nums">{d.date}</td>
+                              <td className="px-3 py-2 text-gray-600">{d.block || "—"}</td>
+                              <td className="px-3 py-2 text-gray-600">{d.project || "—"}</td>
+                              <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmt(d.trees)}</td>
+                              <td className="px-3 py-2 text-right text-gray-500 tabular-nums">{d.hours}h</td>
+                              <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtC(d.earnings)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-gray-50 font-bold border-t-2 border-gray-300">
+                            <td colSpan={3} className="px-3 py-2 text-[9px] uppercase tracking-widest text-gray-500">{r.days} day{r.days !== 1 ? "s" : ""}</td>
+                            <td className="px-3 py-2 text-right text-gray-900 tabular-nums">{fmt(r.totalTrees)}</td>
+                            <td className="px-3 py-2 text-right text-gray-500">—</td>
+                            <td className="px-3 py-2 text-right text-gray-900 tabular-nums">{fmtC(r.earnings)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 {/* Signature lines */}
                 <div className="grid grid-cols-2 gap-8 pt-4 border-t border-gray-200">
                   {["Employee Signature & Date", "Authorized Signatory & Date"].map(label => (
