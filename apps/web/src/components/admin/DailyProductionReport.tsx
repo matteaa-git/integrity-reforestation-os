@@ -598,6 +598,71 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
         }
         localStorage.setItem(BACKFILL_KEY, "1");
       }
+
+      // One-time backfill: from 2026-05-31 onward, recompute every tiered
+      // production line's ratePerTree using the planter's TOTAL trees for the
+      // day as the tier trigger (not the previous per-species cross-planter
+      // logic). Updates each line's earnings, then rolls totals + vac pay.
+      // Flat-rate species are untouched. Idempotent via localStorage flag.
+      const TIER_RECALC_KEY  = "tiered_rate_recalc_2026_05_31";
+      const TIER_RECALC_FROM = "2026-05-31";
+      if (typeof window !== "undefined" && !localStorage.getItem(TIER_RECALC_KEY)) {
+        try {
+          const ratesList = await getAllRecords<SpeciesRate>("species_rates");
+          const ratesById = new Map(ratesList.map(r => [r.id, r]));
+          const inScope = patched.filter(e => e.date >= TIER_RECALC_FROM);
+
+          // Sum each planter's day total across every entry/line in scope.
+          // Key uses employeeId when available, falls back to name so older
+          // entries without an id still group correctly.
+          const dayTotals = new Map<string, number>();
+          const dayKey = (e: ProductionEntry) => `${e.employeeId || e.employeeName}|${e.date}`;
+          for (const e of inScope) {
+            const k = dayKey(e);
+            dayTotals.set(k, (dayTotals.get(k) ?? 0) + e.totalTrees);
+          }
+
+          const recalced: ProductionEntry[] = [];
+          for (const e of inScope) {
+            const dayTotal = dayTotals.get(dayKey(e)) ?? e.totalTrees;
+            let changed = false;
+            const newLines = e.production.map(l => {
+              const rate = ratesById.get(l.speciesId);
+              if (!rate) return l; // unknown species — leave alone
+              const newRpt = resolveRate(rate, l.trees, dayTotal);
+              if (Math.abs(newRpt - l.ratePerTree) < 0.00005) return l;
+              changed = true;
+              return { ...l, ratePerTree: newRpt, earnings: l.trees * newRpt };
+            });
+            if (!changed) continue;
+            const newTotalEarnings = newLines.reduce((s, l) => s + l.earnings, 0);
+            const newVacPay        = newTotalEarnings * 0.04;
+            const updated: ProductionEntry = {
+              ...e,
+              production: newLines,
+              totalEarnings: newTotalEarnings,
+              avgPricePerTree: e.totalTrees > 0 ? newTotalEarnings / e.totalTrees : 0,
+              vacPay: newVacPay,
+              totalWithVac: newTotalEarnings,
+            };
+            recalced.push(updated);
+          }
+
+          if (recalced.length > 0) {
+            const byId = new Map(recalced.map(e => [e.id, e]));
+            patched = patched.map(e => byId.get(e.id) ?? e);
+            for (const e of recalced) {
+              try { await saveRecord("production_entries", e); }
+              catch (err) { console.warn("[tier-recalc] save failed for", e.id, err); }
+            }
+            console.log(`[tier-recalc] recomputed ${recalced.length} entr${recalced.length === 1 ? "y" : "ies"} from ${TIER_RECALC_FROM} onward`);
+          }
+          localStorage.setItem(TIER_RECALC_KEY, "1");
+        } catch (err) {
+          console.warn("[tier-recalc] backfill failed", err);
+        }
+      }
+
       setEntries(patched.sort((a, b) => b.date.localeCompare(a.date)));
     });
     getAllRecords<SavedSession>("session_drafts").then(saved => {
