@@ -1198,18 +1198,37 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   function generateADPCSV() {
     function p(s: string) { return parseFloat(s) || 0; }
     const CREW_RATE = 0.02;
+
+    // ADP CSV numeric format: round to 2 decimals, then strip trailing zeros
+    // (and the dot if all decimals are zero) so the output matches the
+    // reference file exactly — "1987.2" not "1987.20", "78" not "78.00".
+    // Returns "" for zero / non-finite so the caller can skip the row.
+    function fmtAmt(n: number): string {
+      if (!isFinite(n) || n === 0) return "";
+      let s = n.toFixed(2);
+      if (s.includes(".")) s = s.replace(/0+$/, "").replace(/\.$/, "");
+      return s;
+    }
+
     const rows: string[][] = [
-      ["Position ID", "Payment Type", "Earnings Code", "Earnings Amount", "Hours", "Deduction Code", "Deduction Amount"],
+      ["Position ID", "Payment Type", "Earnings Code", "Earnings Amount", "Earnings Hrs/Units", "Deduction Code", "Deduction Amount"],
     ];
 
     function addEmployee(empId: string, regular: number, special: number, camp: number, equip: number, hours: number) {
-      // Hours sit on the regular-wages row only (ADP convention — the
-      // special-worksite row is an allowance, not paid against hours).
-      const hoursCell = hours > 0 ? hours.toFixed(2) : "";
-      rows.push([empId, "CPA", "1",  regular.toFixed(2), hoursCell, "", ""]);
-      rows.push([empId, "CPA", "A0", special.toFixed(2), "", "", ""]);
-      rows.push([empId, "CPA", "", "", "", "47", camp > 0 ? camp.toFixed(2) : ""]);
-      rows.push([empId, "CPA", "", "", "", "48", equip > 0 ? equip.toFixed(2) : ""]);
+      // One row per non-zero value. Rows with a zero or blank earnings/
+      // deduction amount are omitted so the sheet only carries lines that
+      // need to land in ADP. Hours sit on the regular-wages row only (ADP
+      // convention — the special-worksite row is an allowance, not paid
+      // against hours).
+      const regStr   = fmtAmt(regular);
+      const specStr  = fmtAmt(special);
+      const campStr  = fmtAmt(camp);
+      const equipStr = fmtAmt(equip);
+      const hoursStr = fmtAmt(hours);
+      if (regStr)   rows.push([empId, "CPA", "01", regStr,  hoursStr, "", ""]);
+      if (specStr)  rows.push([empId, "CPA", "A0", specStr, "",       "", ""]);
+      if (campStr)  rows.push([empId, "CPA", "",   "",      "",       "47", campStr]);
+      if (equipStr) rows.push([empId, "CPA", "",   "",      "",       "48", equipStr]);
     }
 
     // Planters
