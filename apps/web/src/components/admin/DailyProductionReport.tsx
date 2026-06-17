@@ -207,7 +207,8 @@ function resolveRate(rate: SpeciesRate, trees: number, planterDayTotal?: number)
  * (a single point isn't a meaningful trend).
  */
 function renderProductionChartSvg(
-  dailyLog: { date: string; trees: number; earnings: number }[]
+  dailyLog: { date: string; trees: number; earnings: number }[],
+  options?: { periodStart?: string }
 ): string {
   if (dailyLog.length < 2) return "";
 
@@ -222,6 +223,20 @@ function renderProductionChartSvg(
   const xPos  = (i: number) => padL + (innerW * i) / (dailyLog.length - 1);
   const yPosT = (v: number) => padT + innerH * (1 - v / maxT);
   const yPosE = (v: number) => padT + innerH * (1 - v / maxE);
+
+  // Optional vertical divider at the first index whose date falls inside
+  // the report period — visually separates the 4-week lookback from the
+  // report range itself.
+  let periodMarker = "";
+  if (options?.periodStart) {
+    const idx = dailyLog.findIndex(d => d.date >= options.periodStart!);
+    if (idx > 0 && idx < dailyLog.length) {
+      const x = xPos(idx).toFixed(1);
+      periodMarker = `
+        <line x1="${x}" y1="${padT}" x2="${x}" y2="${H - padB}" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="${x}" y="${padT - 4}" text-anchor="middle" font-size="9" fill="#6b7280" font-weight="600">Report period →</text>`;
+    }
+  }
 
   const treesPath = dailyLog
     .map((d, i) => `${i === 0 ? "M" : "L"} ${xPos(i).toFixed(1)} ${yPosT(d.trees).toFixed(1)}`)
@@ -262,6 +277,7 @@ function renderProductionChartSvg(
       <text x="${W - padR + 8}" y="${padT - 8}" text-anchor="start" font-size="9" fill="#9ca3af" font-weight="700" text-transform="uppercase">$</text>
     </g>
     ${grid}
+    ${periodMarker}
     <path d="${treesPath}"    fill="none" stroke="#10b981" stroke-width="2" stroke-linejoin="round"/>
     <path d="${earningsPath}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>
     ${treeMarkers}
@@ -477,6 +493,11 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     earnings: number; vacPay: number; totalWithVac: number; days: number;
     speciesRows: { block: string; code: string; species: string; trees: number; earnings: number; ratePerTree: number; tierLabel?: string }[];
     dailyLog: { date: string; block: string; project: string; trees: number; hours: number; earnings: number; ratePerTree: number; tierLabel?: string }[];
+    // Production Trend chart series: report period + 4 weeks before. Empty
+    // when the planter has < 2 days of activity across the 6-week window.
+    chartDailyLog: { date: string; trees: number; earnings: number }[];
+    chartPeriodStart: string;   // first day of the report period — used to
+                                // draw the divider line on the chart.
     // Hourly/crew-boss specific
     rateType?: string; rate?: number; quantity?: number;
     // Deductions
@@ -2918,6 +2939,27 @@ ${blockSections}
         });
     })();
 
+    // Production-trend series: pull this planter's entries across a 6-week
+    // window (28 days before dateFrom through dateTo) so the chart shows
+    // historical performance leading into the report period.
+    const chartTrendStart = (() => {
+      const d = new Date(`${dateFrom}T00:00:00`);
+      d.setDate(d.getDate() - 28);
+      return d.toISOString().slice(0, 10);
+    })();
+    const chartDailyLog = (() => {
+      const byDate = new Map<string, { date: string; trees: number; earnings: number }>();
+      for (const e of entries) {
+        if (e.employeeName !== p.name && e.employeeId !== empKey) continue;
+        if (e.date < chartTrendStart || e.date > dateTo) continue;
+        const rec = byDate.get(e.date) ?? { date: e.date, trees: 0, earnings: 0 };
+        rec.trees    += e.totalTrees;
+        rec.earnings += e.totalEarnings;
+        byDate.set(e.date, rec);
+      }
+      return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+    })();
+
     return {
       type: "planter", name: p.name,
       employeeNumber: empObj?.employeeNumber ?? "—",
@@ -2929,6 +2971,8 @@ ${blockSections}
       totalWithVac: p.totalWithVac, days: p.days.size,
       speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree, tierLabel: s.tierLabel })),
       dailyLog: dailyLogRows,
+      chartDailyLog,
+      chartPeriodStart: dateFrom,
       campCosts: camp, equipDeduction: equip, other, gross,
       hours, hourlyEarned, topUp, ytd,
       otHours, otPay, prevAvgHourly,
@@ -2993,9 +3037,9 @@ ${blockSections}
          </table>`
       : "";
 
-    const trendSection = r.type === "planter" && r.dailyLog.length >= 2
-      ? `<div class="section-label">Production Trend</div>
-         <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff">${renderProductionChartSvg(r.dailyLog)}</div>`
+    const trendSection = r.type === "planter" && r.chartDailyLog.length >= 2
+      ? `<div class="section-label">Production Trend · 6-Week View</div>
+         <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff">${renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart })}</div>`
       : "";
 
     const docHtml = `<!DOCTYPE html><html><head>
@@ -6744,6 +6788,26 @@ ${trendSection}
                                             };
                                           });
                                       })();
+                                      // Production-trend series: 28 days before
+                                      // dateFrom through dateTo, all entries for
+                                      // this planter, summed per date.
+                                      const chartTrendStart = (() => {
+                                        const dd = new Date(`${dateFrom}T00:00:00`);
+                                        dd.setDate(dd.getDate() - 28);
+                                        return dd.toISOString().slice(0, 10);
+                                      })();
+                                      const chartDailyLog = (() => {
+                                        const byDate = new Map<string, { date: string; trees: number; earnings: number }>();
+                                        for (const ent of entries) {
+                                          if (ent.employeeName !== p.name && ent.employeeId !== empKey) continue;
+                                          if (ent.date < chartTrendStart || ent.date > dateTo) continue;
+                                          const rec = byDate.get(ent.date) ?? { date: ent.date, trees: 0, earnings: 0 };
+                                          rec.trees    += ent.totalTrees;
+                                          rec.earnings += ent.totalEarnings;
+                                          byDate.set(ent.date, rec);
+                                        }
+                                        return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+                                      })();
                                       const empObj = employees.find(e => e.name === p.name);
                                       setPayrollReport({
                                         type: "planter", name: p.name,
@@ -6756,6 +6820,8 @@ ${trendSection}
                                         totalWithVac: p.totalWithVac, days: p.days.size,
                                         speciesRows: speciesRows.map(s => ({ block: s.block, code: s.code, species: s.species, trees: s.trees, earnings: s.earnings, ratePerTree: s.ratePerTree, tierLabel: s.tierLabel })),
                                         dailyLog: dailyLogRows,
+                                        chartDailyLog,
+                                        chartPeriodStart: dateFrom,
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
@@ -7044,7 +7110,7 @@ ${trendSection}
                                         period: `${dateFrom} – ${dateTo}`,
                                         totalTrees: c.totalTrees, crewTrees: c.totalTrees, planterCount: c.planters.size,
                                         earnings, vacPay: 0, totalWithVac,
-                                        days: 0, speciesRows: [], dailyLog: [],
+                                        days: 0, speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom,
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
@@ -7319,7 +7385,7 @@ ${trendSection}
                                     period: `${dateFrom} – ${dateTo}`,
                                     totalTrees: 0, earnings, vacPay: 0, totalWithVac: earnings,
                                     days: emp.rateType === "dayrate" ? parseNum(emp.quantity) : 0,
-                                    speciesRows: [], dailyLog: [],
+                                    speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom,
                                     rateType: emp.rateType, rate: parseNum(emp.rate), quantity: parseNum(emp.quantity),
                                     campCosts: camp, equipDeduction: equip, other, gross,
                                     hours, hourlyEarned, topUp, ytd: 0,
@@ -9446,12 +9512,15 @@ ${trendSection}
                   </div>
                 )}
 
-                {/* Production Trend chart (planters only, needs ≥ 2 days) */}
-                {r.type === "planter" && r.dailyLog.length >= 2 && (
+                {/* Production Trend chart (planters only). Plots the 4 weeks
+                    leading into the report period plus the report period
+                    itself — a dashed marker shows where the report range
+                    begins. Needs ≥ 2 days of activity in the 6-week window. */}
+                {r.type === "planter" && r.chartDailyLog.length >= 2 && (
                   <div>
-                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Production Trend</div>
+                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Production Trend · 6-Week View</div>
                     <div className="border border-gray-200 rounded-xl overflow-hidden p-3 bg-white">
-                      <div dangerouslySetInnerHTML={{ __html: renderProductionChartSvg(r.dailyLog) }} />
+                      <div dangerouslySetInnerHTML={{ __html: renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart }) }} />
                     </div>
                   </div>
                 )}
