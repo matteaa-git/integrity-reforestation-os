@@ -670,6 +670,25 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
         localStorage.setItem(BACKFILL_KEY, "1");
       }
 
+      // Second hours backfill: starting 2026-05-31, the standard work day
+      // is 9h (not 8h). Forces hoursWorked = 9 on every entry from that
+      // date onward. Runs once per device, after the May 17 → 8h pass so
+      // the later override wins where the two windows overlap.
+      const BACKFILL9_KEY  = "hours_9_backfill_2026_05_31";
+      const BACKFILL9_FROM = "2026-05-31";
+      if (typeof window !== "undefined" && !localStorage.getItem(BACKFILL9_KEY)) {
+        const dirty9 = patched.filter(e => e.date >= BACKFILL9_FROM && e.hoursWorked !== 9);
+        if (dirty9.length > 0) {
+          patched = patched.map(e => (e.date >= BACKFILL9_FROM ? { ...e, hoursWorked: 9 } : e));
+          for (const e of dirty9) {
+            try { await saveRecord("production_entries", { ...e, hoursWorked: 9 }); }
+            catch (err) { console.warn("[hours-9-backfill] save failed for", e.id, err); }
+          }
+          console.log(`[hours-9-backfill] patched ${dirty9.length} entr${dirty9.length === 1 ? "y" : "ies"} from ${BACKFILL9_FROM} onward`);
+        }
+        localStorage.setItem(BACKFILL9_KEY, "1");
+      }
+
       // One-time backfill: from 2026-05-31 onward, recompute every tiered
       // production line's ratePerTree using the planter's TOTAL trees for the
       // day as the tier trigger (not the previous per-species cross-planter
