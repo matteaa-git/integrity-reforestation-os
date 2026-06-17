@@ -6415,8 +6415,81 @@ ${trendSection}
                 ? filtered.reduce((s, e) => s + rowTrees(e), 0)
                 : totals.totalTrees;
 
+              // When a species is searched, build a Block × Planter breakdown
+              // showing exactly where the species got planted and by whom.
+              // Each block row lists every planter who put the species in,
+              // their tree count, and how many distinct days they planted it.
+              const blockBreakdown = (() => {
+                if (!speciesNeedle) return null;
+                const byBlock = new Map<string, {
+                  block: string;
+                  project: string;
+                  trees: number;
+                  planters: Map<string, { name: string; trees: number; dates: Set<string> }>;
+                }>();
+                for (const e of filtered) {
+                  const lines = matchingLines(e);
+                  if (lines.length === 0) continue;
+                  const lineTrees = lines.reduce((s, l) => s + l.trees, 0);
+                  if (lineTrees === 0) continue;
+                  const bk = e.block || "(No Block)";
+                  const rec = byBlock.get(bk) ?? { block: bk, project: e.project || "", trees: 0, planters: new Map() };
+                  rec.trees += lineTrees;
+                  if (!rec.project && e.project) rec.project = e.project;
+                  const pk = e.employeeId || e.employeeName;
+                  const prec = rec.planters.get(pk) ?? { name: e.employeeName, trees: 0, dates: new Set<string>() };
+                  prec.trees += lineTrees;
+                  prec.dates.add(e.date);
+                  rec.planters.set(pk, prec);
+                  byBlock.set(bk, rec);
+                }
+                return [...byBlock.values()].sort((a, b) => b.trees - a.trees);
+              })();
+
             return (
             <>
+            {/* Species search summary — block × planter breakdown */}
+            {speciesNeedle && blockBreakdown && blockBreakdown.length > 0 && (
+              <div className="rounded-xl border" style={{ background: "rgba(16, 185, 129, 0.06)", borderColor: "rgba(16, 185, 129, 0.25)" }}>
+                <div className="px-5 py-3 border-b" style={{ borderColor: "rgba(16, 185, 129, 0.2)" }}>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] uppercase tracking-widest font-bold" style={{ color: "#10b981" }}>Species Search</span>
+                    <span className="text-sm font-semibold text-text-primary">"{speciesFilter}"</span>
+                    <span className="text-xs text-text-tertiary">
+                      · {fmt(logTotalTrees)} trees · {blockBreakdown.length} block{blockBreakdown.length !== 1 ? "s" : ""} · {new Set(blockBreakdown.flatMap(b => [...b.planters.keys()])).size} planter{new Set(blockBreakdown.flatMap(b => [...b.planters.keys()])).size !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                </div>
+                <div className="divide-y" style={{ borderColor: "rgba(16, 185, 129, 0.15)" }}>
+                  {blockBreakdown.map(b => {
+                    const planterRows = [...b.planters.values()].sort((a, b) => b.trees - a.trees);
+                    return (
+                      <div key={b.block} className="px-5 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-sm font-semibold text-text-primary">
+                            {b.block}
+                            {b.project && <span className="text-text-tertiary font-normal text-xs ml-2">· {b.project}</span>}
+                          </div>
+                          <div className="text-xs font-semibold" style={{ color: "#10b981" }}>{fmt(b.trees)} trees</div>
+                        </div>
+                        <div className="grid gap-1">
+                          {planterRows.map(pr => (
+                            <div key={pr.name} className="flex items-center justify-between text-xs px-2 py-1 rounded hover:bg-surface-secondary/40">
+                              <span className="text-text-secondary">{pr.name}</span>
+                              <div className="flex items-center gap-3 text-text-tertiary tabular-nums">
+                                <span>{pr.dates.size} day{pr.dates.size !== 1 ? "s" : ""}</span>
+                                <span className="font-semibold text-text-primary">{fmt(pr.trees)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* KPIs */}
             <div className="grid grid-cols-2 gap-3">
               {[
