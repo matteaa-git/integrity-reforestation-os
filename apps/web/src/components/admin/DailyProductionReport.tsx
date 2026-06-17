@@ -1251,14 +1251,14 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const equip  = p(d.equipDeduction);
       const other  = p(d.other);
       const topUp  = calcTopUp(pl.totalWithVac, pl.totalHours);
-      // splitBase = gross EARNINGS (before camp/equip/other). 25/75 allocation runs on this.
-      const splitBase = pl.totalWithVac + topUp;
+      // splitBase = gross EARNINGS (piece-rate + vac + top-up + every
+      // additional earnings line, named or generic). 25/75 allocation runs
+      // on splitBase so the worksite allowance reflects ALL income paid.
+      const customEarningsTotal = customEarningsColumns.reduce(
+        (s, col) => s + p((d.customEarnings ?? {})[col.id] ?? ""), 0);
+      const addl = p(d.additionalEarnings) + customEarningsTotal;
+      const splitBase = pl.totalWithVac + topUp + addl;
       const gross  = splitBase - camp - equip - other; // taxable (CPP/EI/tax base)
-      const cpp    = gross > 0 ? gross * 0.0595 : 0;
-      const ei     = gross > 0 ? gross * 0.0166 : 0;
-      const tax    = p(d.incomeTax);
-      const addl   = p(d.additionalEarnings);
-      const net    = gross + addl - cpp - ei - tax;
       addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, pl.totalHours);
     }
 
@@ -1273,13 +1273,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const other    = p(d.other);
       const hours    = p(d.hours);
       const topUp    = calcTopUp(earnings, hours);
-      const splitBase = earnings + topUp;
-      const gross    = splitBase - camp - equip - other;
-      const cpp      = gross > 0 ? gross * 0.0595 : 0;
-      const ei       = gross > 0 ? gross * 0.0166 : 0;
-      const tax      = p(d.incomeTax);
       const addl     = p(d.additionalEarnings);
-      const net      = gross + addl - cpp - ei - tax;
+      const splitBase = earnings + topUp + addl;
+      const gross    = splitBase - camp - equip - other;
       addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, hours);
     }
 
@@ -1293,13 +1289,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const other   = p(emp.other);
       const hrs     = emp.rateType === "hourly" ? p(emp.quantity) : p(emp.hours);
       const topUp   = calcTopUp(earnings, hrs);
-      const splitBase = earnings + topUp;
-      const gross   = splitBase - camp - equip - other;
-      const cpp     = gross > 0 ? gross * 0.0595 : 0;
-      const ei      = gross > 0 ? gross * 0.0166 : 0;
-      const tax     = p(emp.incomeTax);
       const addl    = p(emp.additionalEarnings);
-      const net     = gross + addl - cpp - ei - tax;
+      const splitBase = earnings + topUp + addl;
+      const gross   = splitBase - camp - equip - other;
       addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, hrs);
     }
 
@@ -3181,7 +3173,10 @@ ${blockSections}
       hours, hourlyEarned, topUp, ytd,
       otHours, otPay, prevAvgHourly,
       cpp, ei, incomeTax: tax, net,
-      special: splitBase * 0.25, regular: splitBase * 0.75,
+      // Income Allocation Gross Earnings = piece-rate + vac + top-up +
+      // every additional earnings line (generic + named). 25/75 split
+      // applies to that combined base, NOT the piece-rate amount alone.
+      special: (splitBase + addl) * 0.25, regular: (splitBase + addl) * 0.75,
       additionalEarnings: addl, notes: d.notes ?? "",
     };
   }
@@ -7106,12 +7101,12 @@ ${trendSection}
                                 <td className="px-3 py-2 text-right font-black text-sm" style={{ color: net < 0 ? "var(--color-danger)" : "var(--color-primary)" }}>
                                   {fmtC(net)}
                                 </td>
-                                {/* Allocation columns */}
+                                {/* Allocation columns — base = splitBase + addl */}
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                                  {fmtC(splitBase * 0.25)}
+                                  {fmtC((splitBase + addl) * 0.25)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                                  {fmtC(splitBase * 0.75)}
+                                  {fmtC((splitBase + addl) * 0.75)}
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <button
@@ -7218,7 +7213,7 @@ ${trendSection}
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
                                         cpp, ei, incomeTax: tax, net,
-                                        special: splitBase * 0.25, regular: splitBase * 0.75,
+                                        special: (splitBase + addl) * 0.25, regular: (splitBase + addl) * 0.75,
                                         additionalEarnings: addl, notes: d.notes,
                                       });
                                     }}
@@ -7486,10 +7481,10 @@ ${trendSection}
                                   {fmtC(net)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                                  {fmtC(splitBase * 0.25)}
+                                  {fmtC((splitBase + addl) * 0.25)}
                                 </td>
                                 <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                                  {fmtC(splitBase * 0.75)}
+                                  {fmtC((splitBase + addl) * 0.75)}
                                 </td>
                                 <td className="px-2 py-1.5 text-center">
                                   <button
@@ -7507,7 +7502,7 @@ ${trendSection}
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
                                         cpp, ei, incomeTax: tax, net,
-                                        special: splitBase * 0.25, regular: splitBase * 0.75,
+                                        special: (splitBase + addl) * 0.25, regular: (splitBase + addl) * 0.75,
                                         additionalEarnings: addl, notes: d.notes,
                                       });
                                     }}
@@ -7761,10 +7756,10 @@ ${trendSection}
                               {fmtC(net)}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-text-secondary border-l border-border/60">
-                              {fmtC(splitBase * 0.25)}
+                              {fmtC((splitBase + addl) * 0.25)}
                             </td>
                             <td className="px-3 py-2 text-right font-semibold text-text-secondary">
-                              {fmtC(splitBase * 0.75)}
+                              {fmtC((splitBase + addl) * 0.75)}
                             </td>
                             <td className="px-2 py-1.5 text-center">
                               <button
@@ -7783,7 +7778,7 @@ ${trendSection}
                                     hours, hourlyEarned, topUp, ytd: 0,
                                     otHours, otPay, prevAvgHourly,
                                     cpp, ei, incomeTax: tax, net,
-                                    special: splitBase * 0.25, regular: splitBase * 0.75,
+                                    special: (splitBase + addl) * 0.25, regular: (splitBase + addl) * 0.75,
                                     additionalEarnings: addl, notes: emp.notes,
                                   });
                                 }}
