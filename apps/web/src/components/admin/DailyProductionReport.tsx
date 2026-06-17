@@ -3061,45 +3061,58 @@ ${blockSections}
     const planterEntries = filtered.filter(e => e.employeeName === p.name || e.employeeId === empKey);
     // Collapse same-date entries into a single log row.
     const dailyLogRows = (() => {
-      // One row per (planter, date): show the day total and the day's
-      // effective per-tree rate. Tier triggers off the planter's TOTAL
-      // trees for the day (across all species), matching how rates are
-      // applied at entry time.
-      const byDate = new Map<string, { date: string; blocks: Set<string>; projects: Set<string>; trees: number; hours: number; earnings: number; tieredSpecies: Set<string> }>();
+      // One row per (planter, date, ratePerTree) — when a day's production
+      // sits at a single per-tree rate (the common case), that becomes one
+      // clean row; when the day mixes species at different rates (e.g. a
+      // flat $0.165 Cedar alongside a flat $0.18 Black Spruce), each rate
+      // gets its own row so the $/Tree column always shows the rate that
+      // was actually applied to that subset of trees. Hours stay per-day
+      // (max across same-day entries) so multi-row days don't double-count.
+      const hoursByDate = new Map<string, number>();
       for (const e of planterEntries) {
-        const rec = byDate.get(e.date) ?? { date: e.date, blocks: new Set(), projects: new Set(), trees: 0, hours: 0, earnings: 0, tieredSpecies: new Set<string>() };
-        if (e.block)   rec.blocks.add(e.block);
-        if (e.project) rec.projects.add(e.project);
-        rec.trees    += e.totalTrees;
-        rec.hours     = Math.max(rec.hours, e.hoursWorked);
-        rec.earnings += e.totalEarnings;
-        // Track which species seen on this day used tiered pricing so we
-        // can attach a tier label that's accurate for the day's total.
-        for (const l of e.production) {
-          const sp = rates.find(rd => rd.id === l.speciesId);
-          if (sp?.rateType === "tiered") rec.tieredSpecies.add(sp.id);
-        }
-        byDate.set(e.date, rec);
+        hoursByDate.set(e.date, Math.max(hoursByDate.get(e.date) ?? 0, e.hoursWorked));
       }
-      return [...byDate.values()]
-        .sort((a, b) => a.date.localeCompare(b.date))
+      const dayTreesTotal = new Map<string, number>();    // for tier labels
+      for (const e of planterEntries) {
+        dayTreesTotal.set(e.date, (dayTreesTotal.get(e.date) ?? 0) + e.totalTrees);
+      }
+      const byKey = new Map<string, { date: string; rateKey: string; ratePerTree: number; speciesIds: Set<string>; blocks: Set<string>; projects: Set<string>; trees: number; earnings: number }>();
+      for (const e of planterEntries) {
+        for (const l of e.production) {
+          const rateKey = l.ratePerTree.toFixed(4);
+          const k = `${e.date}|${rateKey}`;
+          const rec = byKey.get(k) ?? {
+            date: e.date, rateKey, ratePerTree: l.ratePerTree,
+            speciesIds: new Set<string>(), blocks: new Set<string>(), projects: new Set<string>(),
+            trees: 0, earnings: 0,
+          };
+          if (e.block)   rec.blocks.add(e.block);
+          if (e.project) rec.projects.add(e.project);
+          rec.speciesIds.add(l.speciesId);
+          rec.trees    += l.trees;
+          rec.earnings += l.earnings;
+          byKey.set(k, rec);
+        }
+      }
+      return [...byKey.values()]
+        .sort((a, b) => a.date.localeCompare(b.date) || b.ratePerTree - a.ratePerTree)
         .map(r => {
-          // Effective day rate = total earnings / total trees. When the day's
-          // entries all share a single tier rate (the new logic), this equals
-          // that rate exactly; for historical mixed-rate days it surfaces the
-          // weighted average and we just omit the tier label.
-          const dayRate = r.trees > 0 ? r.earnings / r.trees : 0;
+          // Tier label only when this row's rate matches one side of a
+          // tiered species' threshold AND that species was actually planted
+          // here. Compares against the planter's day total so the "≥ N" /
+          // "< N" sentence reads correctly when a day has multiple rows.
+          const dayTotal = dayTreesTotal.get(r.date) ?? r.trees;
           let tierLabel: string | undefined;
-          for (const spId of r.tieredSpecies) {
+          for (const spId of r.speciesIds) {
             const rateDef = rates.find(rd => rd.id === spId);
-            if (!rateDef || rateDef.tierThreshold == null
+            if (!rateDef || rateDef.rateType !== "tiered" || rateDef.tierThreshold == null
                 || rateDef.rateBelowThreshold == null || rateDef.rateAboveThreshold == null) continue;
             const EPS = 0.0001;
-            if (Math.abs(dayRate - rateDef.rateAboveThreshold) < EPS) {
-              tierLabel = `${fmt(r.trees)} trees ≥ ${fmt(rateDef.tierThreshold)}`;
+            if (Math.abs(r.ratePerTree - rateDef.rateAboveThreshold) < EPS) {
+              tierLabel = `${fmt(dayTotal)} trees ≥ ${fmt(rateDef.tierThreshold)}`;
               break;
-            } else if (Math.abs(dayRate - rateDef.rateBelowThreshold) < EPS) {
-              tierLabel = `${fmt(r.trees)} trees < ${fmt(rateDef.tierThreshold)}`;
+            } else if (Math.abs(r.ratePerTree - rateDef.rateBelowThreshold) < EPS) {
+              tierLabel = `${fmt(dayTotal)} trees < ${fmt(rateDef.tierThreshold)}`;
               break;
             }
           }
@@ -3108,9 +3121,9 @@ ${blockSections}
             block: [...r.blocks].join(", "),
             project: [...r.projects].join(", "),
             trees: r.trees,
-            hours: r.hours,
+            hours: hoursByDate.get(r.date) ?? 0,
             earnings: r.earnings,
-            ratePerTree: dayRate,
+            ratePerTree: r.ratePerTree,
             tierLabel,
           };
         });
@@ -6981,40 +6994,51 @@ ${trendSection}
                                   <button
                                     onClick={() => {
                                       const planterEntries = filtered.filter(e => e.employeeName === p.name || e.employeeId === empKey);
-                                      // Daily log: one row per (planter, date). Trees and earnings
-                                      // are summed for the day; ratePerTree is the day's effective
-                                      // per-tree rate (earnings ÷ trees). Tier label set when the
-                                      // day's rate matches one side of a tiered species' threshold.
+                                      // Daily log: one row per (date, ratePerTree). Mixed-rate days
+                                      // get split so each row shows the rate that was actually applied
+                                      // to that subset of trees; single-rate days stay as one clean row.
                                       const dailyLogRows = (() => {
-                                        const byDate = new Map<string, { date: string; blocks: Set<string>; projects: Set<string>; trees: number; hours: number; earnings: number; tieredSpecies: Set<string> }>();
-                                        for (const e of planterEntries) {
-                                          const rec = byDate.get(e.date) ?? { date: e.date, blocks: new Set(), projects: new Set(), trees: 0, hours: 0, earnings: 0, tieredSpecies: new Set<string>() };
-                                          if (e.block)   rec.blocks.add(e.block);
-                                          if (e.project) rec.projects.add(e.project);
-                                          rec.trees    += e.totalTrees;
-                                          rec.hours     = Math.max(rec.hours, e.hoursWorked);
-                                          rec.earnings += e.totalEarnings;
-                                          for (const l of e.production) {
-                                            const sp = rates.find(rd => rd.id === l.speciesId);
-                                            if (sp?.rateType === "tiered") rec.tieredSpecies.add(sp.id);
-                                          }
-                                          byDate.set(e.date, rec);
+                                        const hoursByDate = new Map<string, number>();
+                                        for (const ent of planterEntries) {
+                                          hoursByDate.set(ent.date, Math.max(hoursByDate.get(ent.date) ?? 0, ent.hoursWorked));
                                         }
-                                        return [...byDate.values()]
-                                          .sort((a, b) => a.date.localeCompare(b.date))
+                                        const dayTreesTotal = new Map<string, number>();
+                                        for (const ent of planterEntries) {
+                                          dayTreesTotal.set(ent.date, (dayTreesTotal.get(ent.date) ?? 0) + ent.totalTrees);
+                                        }
+                                        const byKey = new Map<string, { date: string; rateKey: string; ratePerTree: number; speciesIds: Set<string>; blocks: Set<string>; projects: Set<string>; trees: number; earnings: number }>();
+                                        for (const ent of planterEntries) {
+                                          for (const l of ent.production) {
+                                            const rateKey = l.ratePerTree.toFixed(4);
+                                            const k = `${ent.date}|${rateKey}`;
+                                            const rec = byKey.get(k) ?? {
+                                              date: ent.date, rateKey, ratePerTree: l.ratePerTree,
+                                              speciesIds: new Set<string>(), blocks: new Set<string>(), projects: new Set<string>(),
+                                              trees: 0, earnings: 0,
+                                            };
+                                            if (ent.block)   rec.blocks.add(ent.block);
+                                            if (ent.project) rec.projects.add(ent.project);
+                                            rec.speciesIds.add(l.speciesId);
+                                            rec.trees    += l.trees;
+                                            rec.earnings += l.earnings;
+                                            byKey.set(k, rec);
+                                          }
+                                        }
+                                        return [...byKey.values()]
+                                          .sort((a, b) => a.date.localeCompare(b.date) || b.ratePerTree - a.ratePerTree)
                                           .map(r => {
-                                            const dayRate = r.trees > 0 ? r.earnings / r.trees : 0;
+                                            const dayTotal = dayTreesTotal.get(r.date) ?? r.trees;
                                             let tierLabel: string | undefined;
-                                            for (const spId of r.tieredSpecies) {
+                                            for (const spId of r.speciesIds) {
                                               const rateDef = rates.find(rd => rd.id === spId);
-                                              if (!rateDef || rateDef.tierThreshold == null
+                                              if (!rateDef || rateDef.rateType !== "tiered" || rateDef.tierThreshold == null
                                                   || rateDef.rateBelowThreshold == null || rateDef.rateAboveThreshold == null) continue;
                                               const EPS = 0.0001;
-                                              if (Math.abs(dayRate - rateDef.rateAboveThreshold) < EPS) {
-                                                tierLabel = `${fmt(r.trees)} trees ≥ ${fmt(rateDef.tierThreshold)}`;
+                                              if (Math.abs(r.ratePerTree - rateDef.rateAboveThreshold) < EPS) {
+                                                tierLabel = `${fmt(dayTotal)} trees ≥ ${fmt(rateDef.tierThreshold)}`;
                                                 break;
-                                              } else if (Math.abs(dayRate - rateDef.rateBelowThreshold) < EPS) {
-                                                tierLabel = `${fmt(r.trees)} trees < ${fmt(rateDef.tierThreshold)}`;
+                                              } else if (Math.abs(r.ratePerTree - rateDef.rateBelowThreshold) < EPS) {
+                                                tierLabel = `${fmt(dayTotal)} trees < ${fmt(rateDef.tierThreshold)}`;
                                                 break;
                                               }
                                             }
@@ -7023,9 +7047,9 @@ ${trendSection}
                                               block: [...r.blocks].join(", "),
                                               project: [...r.projects].join(", "),
                                               trees: r.trees,
-                                              hours: r.hours,
+                                              hours: hoursByDate.get(r.date) ?? 0,
                                               earnings: r.earnings,
-                                              ratePerTree: dayRate,
+                                              ratePerTree: r.ratePerTree,
                                               tierLabel,
                                             };
                                           });
