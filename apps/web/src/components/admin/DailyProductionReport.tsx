@@ -348,6 +348,15 @@ const EMPTY_INFRACTIONS: QualityInfractions = {
   poorSite: 0, missedSpot: 0, jRoot: 0, other: 0,
 };
 
+// User-defined additional-earnings columns shown in the Earnings &
+// Deductions planter table. Each column has a stable id (used as the
+// key inside planterDeds.customEarnings) and an editable display name
+// that surfaces both in the column header and on the payroll report.
+interface CustomEarningsColumn {
+  id: string;
+  name: string;
+}
+
 interface SavedSession {
   id: string;
   name: string;
@@ -498,6 +507,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     chartDailyLog: { date: string; trees: number; earnings: number }[];
     chartPeriodStart: string;   // first day of the report period — used to
                                 // draw the divider line on the chart.
+    // Named custom earnings lines (one per CustomEarningsColumn that holds a
+    // non-zero value for this planter). Sums into additionalEarnings.
+    customEarnings: { name: string; amount: number }[];
     // Hourly/crew-boss specific
     rateType?: string; rate?: number; quantity?: number;
     // Deductions
@@ -591,7 +603,19 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     campCosts: string; equipDeduction: string; other: string;
     cpp: string; ei: string; incomeTax: string;
     additionalEarnings: string; notes: string;
+    // Optional map of values keyed by CustomEarningsColumn.id. Missing keys
+    // are treated as zero so adding a column never affects historical data.
+    customEarnings?: Record<string, string>;
   }>>({});
+
+  // User-managed extra "additional earnings" columns shown in the planter
+  // table. Synced via app_data (one record per column) so the column set is
+  // shared across devices.
+  const [customEarningsColumns, setCustomEarningsColumns] = useState<CustomEarningsColumn[]>([]);
+  const [showAddEarningsColumnModal, setShowAddEarningsColumnModal] = useState(false);
+  const [newEarningsColumnName, setNewEarningsColumnName] = useState("");
+  const [renamingColumnId, setRenamingColumnId] = useState<string | null>(null);
+  const [renamingColumnName, setRenamingColumnName] = useState("");
 
   // Crew Boss deductions (keyed by crew boss name)
   const [crewDeds, setCrewDeds] = useState<Record<string, {
@@ -781,6 +805,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     });
     getAllRecords<PayrollDraft>("payroll_drafts").then(saved => {
       setPayrollDrafts(saved.sort((a, b) => b.savedAt.localeCompare(a.savedAt)));
+    });
+    getAllRecords<CustomEarningsColumn>("custom_earnings_columns").then(saved => {
+      setCustomEarningsColumns(saved);
     });
     getSupervisorDeliveries().then(saved => {
       setDeliveries(saved.sort((a, b) => b.date.localeCompare(a.date)));
@@ -1004,6 +1031,63 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   async function handleDeletePayrollDraft(id: string) {
     await deleteRecord("payroll_drafts", id);
     setPayrollDrafts(prev => prev.filter(d => d.id !== id));
+  }
+
+  // ── Custom Earnings Columns ────────────────────────────────────────────
+
+  async function handleAddCustomEarningsColumn() {
+    const name = newEarningsColumnName.trim();
+    if (!name) return;
+    const col: CustomEarningsColumn = { id: `ec-${uid()}`, name };
+    setCustomEarningsColumns(prev => [...prev, col]);
+    setShowAddEarningsColumnModal(false);
+    setNewEarningsColumnName("");
+    try { await saveRecord("custom_earnings_columns", col); }
+    catch (err) { console.warn("[earnings-columns] save failed", err); }
+  }
+
+  async function handleRenameCustomEarningsColumn(id: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setCustomEarningsColumns(prev => prev.map(c => c.id === id ? { ...c, name: trimmed } : c));
+    setRenamingColumnId(null);
+    setRenamingColumnName("");
+    try { await saveRecord("custom_earnings_columns", { id, name: trimmed }); }
+    catch (err) { console.warn("[earnings-columns] rename failed", err); }
+  }
+
+  async function handleDeleteCustomEarningsColumn(id: string) {
+    if (!window.confirm("Delete this earnings column? Any per-planter values it holds will be discarded.")) return;
+    setCustomEarningsColumns(prev => prev.filter(c => c.id !== id));
+    // Also strip the column's values from every planter so the snapshot
+    // doesn't keep summing them after the column is gone.
+    setPlanterDeds(prev => {
+      const next: typeof prev = {};
+      for (const [name, ded] of Object.entries(prev)) {
+        if (!ded.customEarnings || !(id in ded.customEarnings)) {
+          next[name] = ded;
+          continue;
+        }
+        const { [id]: _drop, ...rest } = ded.customEarnings;
+        next[name] = { ...ded, customEarnings: rest };
+      }
+      return next;
+    });
+    try { await deleteRecord("custom_earnings_columns", id); }
+    catch (err) { console.warn("[earnings-columns] delete failed", err); }
+  }
+
+  function setCustomEarningsValue(planterName: string, columnId: string, value: string) {
+    setPlanterDeds(prev => {
+      const existing = prev[planterName] ?? { campCosts: "", equipDeduction: "", other: "", cpp: "", ei: "", incomeTax: "", additionalEarnings: "", notes: "" };
+      return {
+        ...prev,
+        [planterName]: {
+          ...existing,
+          customEarnings: { ...(existing.customEarnings ?? {}), [columnId]: value },
+        },
+      };
+    });
   }
 
   // ── Export ─────────────────────────────────────────────────────────────
@@ -2836,7 +2920,15 @@ ${blockSections}
     const equip   = parseFloat(d.equipDeduction) || 0;
     const other   = parseFloat(d.other)          || 0;
     const tax     = parseFloat(d.incomeTax)      || 0;
-    const addl    = parseFloat(d.additionalEarnings) || 0;
+    // Named custom earnings lines + the original generic "Additional
+    // Earnings" field. The generic field stays for backwards compatibility;
+    // it shows up as an unlabelled "Additional Earnings" line if non-zero.
+    const customEarnings = customEarningsColumns
+      .map(col => ({ name: col.name, amount: parseFloat((d.customEarnings ?? {})[col.id] ?? "") || 0 }))
+      .filter(e => e.amount > 0);
+    const customEarningsTotal = customEarnings.reduce((s, e) => s + e.amount, 0);
+    const baseAddl = parseFloat(d.additionalEarnings) || 0;
+    const addl = baseAddl + customEarningsTotal;
     const hours   = p.totalHours;
     const hourlyEarned = hours > 0 ? p.totalWithVac / hours : null;
     const topUp     = calcTopUp(p.totalWithVac, hours);
@@ -2973,6 +3065,7 @@ ${blockSections}
       dailyLog: dailyLogRows,
       chartDailyLog,
       chartPeriodStart: dateFrom,
+      customEarnings,
       campCosts: camp, equipDeduction: equip, other, gross,
       hours, hourlyEarned, topUp, ytd,
       otHours, otPay, prevAvgHourly,
@@ -3110,7 +3203,14 @@ ${earningsSection}
     ${r.other > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Other</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.other)}</td></tr>` : ""}
     <tr style="font-weight:700;border-top:2px solid #d1d5db"><td style="padding:8px 10px">Gross Taxable</td><td style="padding:8px 10px;text-align:right">${fmtC(r.gross)}</td></tr>
     ${r.otPay != null && r.otPay > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Overtime Pay (${r.otHours}h × 1.5×)</td><td style="padding:6px 10px;text-align:right;color:#d97706">+${fmtC(r.otPay)}</td></tr>` : ""}
-    ${r.additionalEarnings > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Additional Earnings</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(r.additionalEarnings)}</td></tr>` : ""}
+    ${r.customEarnings.map(ce => `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">${ce.name}</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(ce.amount)}</td></tr>`).join("")}
+    ${(() => {
+      const named = r.customEarnings.reduce((s, c) => s + c.amount, 0);
+      const generic = r.additionalEarnings - named;
+      return generic > 0.005
+        ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Additional Earnings</td><td style="padding:6px 10px;text-align:right;color:#059669">+${fmtC(generic)}</td></tr>`
+        : "";
+    })()}
     ${(r.type !== "planter" && r.type !== "crew") ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">CPP (5.95%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.cpp)}</td></tr>
     <tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">EI (1.66%)</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.ei)}</td></tr>` : ""}
     ${r.type !== "planter" && r.incomeTax > 0 ? `<tr class="waterfall-row"><td style="padding:6px 10px 6px 28px;color:#6b7280">Income Tax</td><td style="padding:6px 10px;text-align:right;color:#dc2626">−${fmtC(r.incomeTax)}</td></tr>` : ""}
@@ -6425,6 +6525,16 @@ ${trendSection}
                   )}
                 </button>
 
+                {/* + Earnings Column */}
+                <button
+                  onClick={() => setShowAddEarningsColumnModal(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border border-border text-text-secondary hover:border-primary hover:text-primary bg-surface transition-colors"
+                  title="Add a named earnings column (e.g. Trail Bonus, Travel Allowance)"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12M6 12h12"/></svg>
+                  Earnings Column
+                </button>
+
                 {/* ADP Export */}
                 <button
                   onClick={generateADPCSV}
@@ -6534,6 +6644,36 @@ ${trendSection}
                           <div className="text-[9px] font-normal normal-case tracking-normal opacity-60">&gt;178h/4-wk · 1.5× prev avg</div>
                         </th>
                         <th className="px-3 py-2.5 text-right text-[10px] uppercase tracking-widest font-semibold text-text-tertiary whitespace-nowrap">Additional Earnings</th>
+                        {customEarningsColumns.map(col => (
+                          <th key={col.id} className="px-3 py-2.5 text-right text-[10px] uppercase tracking-widest font-semibold text-text-tertiary whitespace-nowrap bg-emerald-50/30">
+                            {renamingColumnId === col.id ? (
+                              <input
+                                autoFocus
+                                value={renamingColumnName}
+                                onChange={e => setRenamingColumnName(e.target.value)}
+                                onBlur={() => handleRenameCustomEarningsColumn(col.id, renamingColumnName)}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter")  handleRenameCustomEarningsColumn(col.id, renamingColumnName);
+                                  if (e.key === "Escape") { setRenamingColumnId(null); setRenamingColumnName(""); }
+                                }}
+                                className="w-28 bg-surface border border-primary rounded px-1.5 py-0.5 text-[10px] text-text-primary uppercase tracking-widest font-semibold text-right focus:outline-none"
+                              />
+                            ) : (
+                              <div className="flex items-center justify-end gap-1 group/col">
+                                <span
+                                  className="cursor-pointer hover:underline"
+                                  onClick={() => { setRenamingColumnId(col.id); setRenamingColumnName(col.name); }}
+                                  title="Click to rename"
+                                >{col.name}</span>
+                                <button
+                                  onClick={() => handleDeleteCustomEarningsColumn(col.id)}
+                                  className="opacity-0 group-hover/col:opacity-100 text-text-tertiary hover:text-red-400 text-xs font-bold transition-all"
+                                  title="Delete column"
+                                >×</button>
+                              </div>
+                            )}
+                          </th>
+                        ))}
                         <th className="px-3 py-2.5 text-left text-[10px] uppercase tracking-widest font-semibold text-text-tertiary whitespace-nowrap">Notes</th>
                         {/* Statutory deductions */}
                         <th className="px-3 py-2.5 text-right text-[10px] uppercase tracking-widest font-semibold text-text-tertiary whitespace-nowrap bg-surface-secondary/60">
@@ -6582,7 +6722,13 @@ ${trendSection}
                             const cpp    = gross > 0 ? gross * 0.0595 : 0;
                             const ei     = gross > 0 ? gross * 0.0166 : 0;
                             const tax    = parseNum(d.incomeTax);
-                            const addl   = parseNum(d.additionalEarnings);
+                            // Named custom earnings + the legacy generic
+                            // "Additional Earnings" field, summed into addl.
+                            const planterCustomEarnings = customEarningsColumns
+                              .map(col => ({ name: col.name, amount: parseNum((d.customEarnings ?? {})[col.id] ?? "") }))
+                              .filter(e => e.amount > 0);
+                            const planterCustomEarningsTotal = planterCustomEarnings.reduce((s, e) => s + e.amount, 0);
+                            const addl   = parseNum(d.additionalEarnings) + planterCustomEarningsTotal;
                             const net    = gross + addl - cpp - ei - tax;
                             const avgDay = p.days.size > 0 ? Math.round(p.totalTrees / p.days.size) : 0;
                             const isExpanded = expandedPlanters.has(p.name);
@@ -6704,6 +6850,15 @@ ${trendSection}
                                     onChange={e => setDedField(p.name, "additionalEarnings", e.target.value)}
                                     className={dedInputCls} />
                                 </td>
+                                {/* Custom earnings columns */}
+                                {customEarningsColumns.map(col => (
+                                  <td key={col.id} className="px-2 py-1.5 text-right bg-emerald-50/30">
+                                    <input type="number" min="0" step="0.01" placeholder="0.00"
+                                      value={(d.customEarnings ?? {})[col.id] ?? ""}
+                                      onChange={e => setCustomEarningsValue(p.name, col.id, e.target.value)}
+                                      className={dedInputCls} />
+                                  </td>
+                                ))}
                                 {/* Notes */}
                                 <td className="px-2 py-1.5">
                                   <input type="text" placeholder="Notes…"
@@ -6822,6 +6977,7 @@ ${trendSection}
                                         dailyLog: dailyLogRows,
                                         chartDailyLog,
                                         chartPeriodStart: dateFrom,
+                                        customEarnings: planterCustomEarnings,
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
@@ -7110,7 +7266,7 @@ ${trendSection}
                                         period: `${dateFrom} – ${dateTo}`,
                                         totalTrees: c.totalTrees, crewTrees: c.totalTrees, planterCount: c.planters.size,
                                         earnings, vacPay: 0, totalWithVac,
-                                        days: 0, speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom,
+                                        days: 0, speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom, customEarnings: [],
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
@@ -7385,7 +7541,7 @@ ${trendSection}
                                     period: `${dateFrom} – ${dateTo}`,
                                     totalTrees: 0, earnings, vacPay: 0, totalWithVac: earnings,
                                     days: emp.rateType === "dayrate" ? parseNum(emp.quantity) : 0,
-                                    speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom,
+                                    speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom, customEarnings: [],
                                     rateType: emp.rateType, rate: parseNum(emp.rate), quantity: parseNum(emp.quantity),
                                     campCosts: camp, equipDeduction: equip, other, gross,
                                     hours, hourlyEarned, topUp, ytd: 0,
@@ -8945,6 +9101,39 @@ ${trendSection}
         </div>
       )}
 
+      {/* ── Add Earnings Column Modal ──────────────────────────────────────── */}
+      {showAddEarningsColumnModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-surface rounded-2xl border border-border shadow-2xl w-full max-w-sm mx-4">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="text-sm font-semibold text-text-primary">Add Earnings Column</div>
+              <button onClick={() => { setShowAddEarningsColumnModal(false); setNewEarningsColumnName(""); }} className="text-text-tertiary hover:text-text-primary text-lg leading-none">×</button>
+            </div>
+            <div className="p-6">
+              <label className={labelCls}>Column Name *</label>
+              <input
+                autoFocus
+                value={newEarningsColumnName}
+                onChange={e => setNewEarningsColumnName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && handleAddCustomEarningsColumn()}
+                placeholder="e.g. Trail Bonus, Travel Allowance"
+                className={inputCls}
+              />
+              <div className="text-[11px] text-text-tertiary mt-2">
+                Adds a new column to the planter Earnings &amp; Deductions table. The name you enter shows in the column header and as its own line on the payroll report.
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
+              <button onClick={() => { setShowAddEarningsColumnModal(false); setNewEarningsColumnName(""); }} className="px-4 py-2 text-xs font-medium text-text-secondary border border-border rounded-lg hover:bg-surface-secondary transition-colors">Cancel</button>
+              <button onClick={handleAddCustomEarningsColumn} disabled={!newEarningsColumnName.trim()}
+                className="px-4 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}>
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Rate Modal ─────────────────────────────────────────────────────── */}
       {showRateModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -9419,7 +9608,19 @@ ${trendSection}
                         {r.other > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Other</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.other)}</td></tr>}
                         <tr className="border-t-2 border-gray-300 bg-gray-50"><td className="px-4 py-2.5 font-bold text-gray-900">Gross Taxable</td><td className="px-4 py-2.5 text-right font-bold tabular-nums">{fmtC(r.gross)}</td></tr>
                         {r.otPay != null && r.otPay > 0 && <tr className="bg-amber-50"><td className="px-4 py-2 text-amber-700 pl-8 text-[11px]">+ Overtime Pay ({r.otHours}h × 1.5 × ${r.prevAvgHourly?.toFixed(2) ?? "—"}/h)</td><td className="px-4 py-2 text-right font-semibold text-amber-700 tabular-nums">+{fmtC(r.otPay)}</td></tr>}
-                        {r.additionalEarnings > 0 && <tr className="bg-emerald-50"><td className="px-4 py-2 text-emerald-700 pl-8 text-[11px]">+ Additional Earnings</td><td className="px-4 py-2 text-right font-semibold text-emerald-700 tabular-nums">+{fmtC(r.additionalEarnings)}</td></tr>}
+                        {r.customEarnings.map((ce, i) => (
+                          <tr key={`ce-${i}`} className="bg-emerald-50"><td className="px-4 py-2 text-emerald-700 pl-8 text-[11px]">+ {ce.name}</td><td className="px-4 py-2 text-right font-semibold text-emerald-700 tabular-nums">+{fmtC(ce.amount)}</td></tr>
+                        ))}
+                        {(() => {
+                          // Remainder of additionalEarnings not covered by
+                          // named custom columns (e.g. value typed into the
+                          // generic "Additional Earnings" input).
+                          const named = r.customEarnings.reduce((s, c) => s + c.amount, 0);
+                          const generic = r.additionalEarnings - named;
+                          return generic > 0.005
+                            ? <tr className="bg-emerald-50"><td className="px-4 py-2 text-emerald-700 pl-8 text-[11px]">+ Additional Earnings</td><td className="px-4 py-2 text-right font-semibold text-emerald-700 tabular-nums">+{fmtC(generic)}</td></tr>
+                            : null;
+                        })()}
                         {(r.type !== "planter" && r.type !== "crew") && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− CPP (5.95%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.cpp)}</td></tr>}
                         {(r.type !== "planter" && r.type !== "crew") && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− EI (1.66%)</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.ei)}</td></tr>}
                         {r.type !== "planter" && r.incomeTax > 0 && <tr className="bg-gray-50"><td className="px-4 py-2 text-gray-500 pl-8 text-[11px]">− Income Tax</td><td className="px-4 py-2 text-right text-red-500 tabular-nums">−{fmtC(r.incomeTax)}</td></tr>}
