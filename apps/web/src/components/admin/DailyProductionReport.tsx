@@ -437,6 +437,9 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [crewFilter, setCrewFilter]     = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [planterFilter, setPlanterFilter] = useState("all");
+  // Free-text species filter (matches by species name OR code, case-insensitive
+  // substring). Empty string means "any species".
+  const [speciesFilter, setSpeciesFilter] = useState("");
 
   // Saved sessions (Save As / Open)
   const [savedSessions, setSavedSessions]     = useState<SavedSession[]>([]);
@@ -2514,14 +2517,25 @@ ${blockSections}
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [entries]);
 
-  const filtered = useMemo(() => entries.filter(e => {
-    if (isCrewBoss && e.crewBoss !== userName) return false;
-    if (e.date < dateFrom || e.date > dateTo) return false;
-    if (crewFilter    !== "all" && e.crewBoss !== crewFilter) return false;
-    if (projectFilter !== "all" && e.project  !== projectFilter) return false;
-    if (planterFilter !== "all" && e.employeeId !== planterFilter && e.employeeName !== planterFilter) return false;
-    return true;
-  }), [entries, dateFrom, dateTo, crewFilter, projectFilter, planterFilter, isCrewBoss, userName]);
+  const filtered = useMemo(() => {
+    const needle = speciesFilter.trim().toLowerCase();
+    return entries.filter(e => {
+      if (isCrewBoss && e.crewBoss !== userName) return false;
+      if (e.date < dateFrom || e.date > dateTo) return false;
+      if (crewFilter    !== "all" && e.crewBoss !== crewFilter) return false;
+      if (projectFilter !== "all" && e.project  !== projectFilter) return false;
+      if (planterFilter !== "all" && e.employeeId !== planterFilter && e.employeeName !== planterFilter) return false;
+      if (needle) {
+        // Keep the row when ANY of its production lines matches the search.
+        const matches = e.production.some(l =>
+          l.species.toLowerCase().includes(needle) ||
+          l.code.toLowerCase().includes(needle)
+        );
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [entries, dateFrom, dateTo, crewFilter, projectFilter, planterFilter, speciesFilter, isCrewBoss, userName]);
 
   // ── Summary aggregations ──────────────────────────────────────────────
 
@@ -2924,6 +2938,30 @@ ${blockSections}
         <option value="all">All Planters</option>
         {uniquePlanters.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
       </select>
+      {/* Searchable species filter — substring match against species name or
+          code. Datalist gives native autocomplete from the configured rates. */}
+      <div className="relative">
+        <input
+          type="search"
+          placeholder="Search species…"
+          value={speciesFilter}
+          onChange={e => setSpeciesFilter(e.target.value)}
+          list="species-filter-options"
+          className={`${filterInputCls} pr-7`}
+          style={{ minWidth: 180 }}
+        />
+        {speciesFilter && (
+          <button
+            onClick={() => setSpeciesFilter("")}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-primary text-sm leading-none px-1"
+            title="Clear species filter"
+            type="button"
+          >×</button>
+        )}
+        <datalist id="species-filter-options">
+          {rates.map(r => <option key={r.id} value={`${r.code} – ${r.species}`} />)}
+        </datalist>
+      </div>
       <div className="flex-1" />
       <div className="text-xs text-text-tertiary">{filtered.length} entr{filtered.length !== 1 ? "ies" : "y"}</div>
     </div>
