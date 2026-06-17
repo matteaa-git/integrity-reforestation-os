@@ -208,7 +208,7 @@ function resolveRate(rate: SpeciesRate, trees: number, planterDayTotal?: number)
  */
 function renderProductionChartSvg(
   dailyLog: { date: string; trees: number; earnings: number }[],
-  options?: { periodStart?: string }
+  options?: { periodStart?: string; rangeStart?: string; rangeEnd?: string }
 ): string {
   if (dailyLog.length < 2) return "";
 
@@ -220,18 +220,30 @@ function renderProductionChartSvg(
   const maxT = Math.max(1, ...dailyLog.map(d => d.trees))    * 1.1;
   const maxE = Math.max(1, ...dailyLog.map(d => d.earnings)) * 1.1;
 
-  const xPos  = (i: number) => padL + (innerW * i) / (dailyLog.length - 1);
+  // Date-based x-axis: rangeStart/rangeEnd anchor the timeline so the
+  // chart always spans the full window (e.g. the 6-week lookback +
+  // report period) regardless of which days happen to have entries.
+  // Falls back to the data extremes when no range is provided.
+  const rangeStart = options?.rangeStart ?? dailyLog[0].date;
+  const rangeEnd   = options?.rangeEnd   ?? dailyLog[dailyLog.length - 1].date;
+  const startMs    = new Date(`${rangeStart}T00:00:00Z`).getTime();
+  const endMs      = new Date(`${rangeEnd}T00:00:00Z`).getTime();
+  const spanMs     = Math.max(1, endMs - startMs);
+  const xPosDate   = (date: string) => {
+    const ms = new Date(`${date}T00:00:00Z`).getTime();
+    return padL + innerW * ((ms - startMs) / spanMs);
+  };
   const yPosT = (v: number) => padT + innerH * (1 - v / maxT);
   const yPosE = (v: number) => padT + innerH * (1 - v / maxE);
 
-  // Optional vertical divider at the first index whose date falls inside
-  // the report period — visually separates the 4-week lookback from the
-  // report range itself.
+  // Optional vertical divider at the report-period start. Drawn whenever
+  // periodStart falls strictly inside the axis range — visually separates
+  // the 4-week lookback from the report period itself.
   let periodMarker = "";
   if (options?.periodStart) {
-    const idx = dailyLog.findIndex(d => d.date >= options.periodStart!);
-    if (idx > 0 && idx < dailyLog.length) {
-      const x = xPos(idx).toFixed(1);
+    const psMs = new Date(`${options.periodStart}T00:00:00Z`).getTime();
+    if (psMs > startMs && psMs < endMs) {
+      const x = xPosDate(options.periodStart).toFixed(1);
       periodMarker = `
         <line x1="${x}" y1="${padT}" x2="${x}" y2="${H - padB}" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3 3"/>
         <text x="${x}" y="${padT - 4}" text-anchor="middle" font-size="9" fill="#6b7280" font-weight="600">Report period →</text>`;
@@ -239,10 +251,10 @@ function renderProductionChartSvg(
   }
 
   const treesPath = dailyLog
-    .map((d, i) => `${i === 0 ? "M" : "L"} ${xPos(i).toFixed(1)} ${yPosT(d.trees).toFixed(1)}`)
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${xPosDate(d.date).toFixed(1)} ${yPosT(d.trees).toFixed(1)}`)
     .join(" ");
   const earningsPath = dailyLog
-    .map((d, i) => `${i === 0 ? "M" : "L"} ${xPos(i).toFixed(1)} ${yPosE(d.earnings).toFixed(1)}`)
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${xPosDate(d.date).toFixed(1)} ${yPosE(d.earnings).toFixed(1)}`)
     .join(" ");
 
   // 5 horizontal grid lines (incl. top + bottom); label both axes.
@@ -253,18 +265,24 @@ function renderProductionChartSvg(
             <text x="${W - padR + 8}" y="${y + 4}" text-anchor="start" font-size="10" fill="#9ca3af">$${Math.round(maxE * f).toLocaleString("en-CA")}</text>`;
   }).join("");
 
-  // X labels — show ~8 evenly spaced dates so they don't overlap.
-  const stride = Math.max(1, Math.ceil(dailyLog.length / 8));
-  const xLabels = dailyLog.map((d, i) => {
-    if (i % stride !== 0 && i !== dailyLog.length - 1) return "";
-    return `<text x="${xPos(i).toFixed(1)}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="#6b7280">${d.date.slice(5)}</text>`;
+  // X labels — 7 evenly-spaced dates across the chart's date range so the
+  // 6-week timeline always looks the same, regardless of how many points
+  // sit on it.
+  const spanDays = Math.round(spanMs / 86_400_000);
+  const tickCount = Math.min(7, Math.max(2, spanDays + 1));
+  const xLabels = Array.from({ length: tickCount }).map((_, i) => {
+    const ms  = startMs + (spanMs * i) / (tickCount - 1);
+    const dt  = new Date(ms);
+    const iso = dt.toISOString().slice(0, 10);
+    const x   = (padL + (innerW * i) / (tickCount - 1)).toFixed(1);
+    return `<text x="${x}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="#6b7280">${iso.slice(5)}</text>`;
   }).join("");
 
   const treeMarkers = dailyLog
-    .map((d, i) => `<circle cx="${xPos(i).toFixed(1)}" cy="${yPosT(d.trees).toFixed(1)}" r="3" fill="#10b981"/>`)
+    .map(d => `<circle cx="${xPosDate(d.date).toFixed(1)}" cy="${yPosT(d.trees).toFixed(1)}" r="3" fill="#10b981"/>`)
     .join("");
   const earningsMarkers = dailyLog
-    .map((d, i) => `<circle cx="${xPos(i).toFixed(1)}" cy="${yPosE(d.earnings).toFixed(1)}" r="3" fill="#3b82f6"/>`)
+    .map(d => `<circle cx="${xPosDate(d.date).toFixed(1)}" cy="${yPosE(d.earnings).toFixed(1)}" r="3" fill="#3b82f6"/>`)
     .join("");
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:240px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" xmlns="http://www.w3.org/2000/svg">
@@ -507,6 +525,10 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     chartDailyLog: { date: string; trees: number; earnings: number }[];
     chartPeriodStart: string;   // first day of the report period — used to
                                 // draw the divider line on the chart.
+    chartRangeStart: string;    // x-axis start (dateFrom − 28 days). Anchors
+                                // the timeline so the 6-week window is
+                                // always visible even if it's mostly empty.
+    chartRangeEnd: string;      // x-axis end (dateTo).
     // Named custom earnings lines (one per CustomEarningsColumn that holds a
     // non-zero value for this planter). Sums into additionalEarnings.
     customEarnings: { name: string; amount: number }[];
@@ -3065,6 +3087,8 @@ ${blockSections}
       dailyLog: dailyLogRows,
       chartDailyLog,
       chartPeriodStart: dateFrom,
+      chartRangeStart: chartTrendStart,
+      chartRangeEnd: dateTo,
       customEarnings,
       campCosts: camp, equipDeduction: equip, other, gross,
       hours, hourlyEarned, topUp, ytd,
@@ -3132,7 +3156,7 @@ ${blockSections}
 
     const trendSection = r.type === "planter" && r.chartDailyLog.length >= 2
       ? `<div class="section-label">Production Trend · 6-Week View</div>
-         <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff">${renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart })}</div>`
+         <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff">${renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart, rangeStart: r.chartRangeStart, rangeEnd: r.chartRangeEnd })}</div>`
       : "";
 
     const docHtml = `<!DOCTYPE html><html><head>
@@ -6977,6 +7001,8 @@ ${trendSection}
                                         dailyLog: dailyLogRows,
                                         chartDailyLog,
                                         chartPeriodStart: dateFrom,
+                                        chartRangeStart: chartTrendStart,
+                                        chartRangeEnd: dateTo,
                                         customEarnings: planterCustomEarnings,
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
@@ -7266,7 +7292,7 @@ ${trendSection}
                                         period: `${dateFrom} – ${dateTo}`,
                                         totalTrees: c.totalTrees, crewTrees: c.totalTrees, planterCount: c.planters.size,
                                         earnings, vacPay: 0, totalWithVac,
-                                        days: 0, speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom, customEarnings: [],
+                                        days: 0, speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom, chartRangeStart: dateFrom, chartRangeEnd: dateTo, customEarnings: [],
                                         campCosts: camp, equipDeduction: equip, other, gross,
                                         hours, hourlyEarned, topUp, ytd,
                                         otHours, otPay, prevAvgHourly,
@@ -7541,7 +7567,7 @@ ${trendSection}
                                     period: `${dateFrom} – ${dateTo}`,
                                     totalTrees: 0, earnings, vacPay: 0, totalWithVac: earnings,
                                     days: emp.rateType === "dayrate" ? parseNum(emp.quantity) : 0,
-                                    speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom, customEarnings: [],
+                                    speciesRows: [], dailyLog: [], chartDailyLog: [], chartPeriodStart: dateFrom, chartRangeStart: dateFrom, chartRangeEnd: dateTo, customEarnings: [],
                                     rateType: emp.rateType, rate: parseNum(emp.rate), quantity: parseNum(emp.quantity),
                                     campCosts: camp, equipDeduction: equip, other, gross,
                                     hours, hourlyEarned, topUp, ytd: 0,
@@ -9721,7 +9747,7 @@ ${trendSection}
                   <div>
                     <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Production Trend · 6-Week View</div>
                     <div className="border border-gray-200 rounded-xl overflow-hidden p-3 bg-white">
-                      <div dangerouslySetInnerHTML={{ __html: renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart }) }} />
+                      <div dangerouslySetInnerHTML={{ __html: renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart, rangeStart: r.chartRangeStart, rangeEnd: r.chartRangeEnd }) }} />
                     </div>
                   </div>
                 )}
