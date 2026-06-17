@@ -759,14 +759,25 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
         localStorage.setItem(BACKFILL9_KEY, "1");
       }
 
-      // One-time backfill: from 2026-05-31 onward, recompute every tiered
-      // production line's ratePerTree using the planter's TOTAL trees for the
-      // day as the tier trigger (not the previous per-species cross-planter
-      // logic). Updates each line's earnings, then rolls totals + vac pay.
-      // Flat-rate species are untouched. Idempotent via localStorage flag.
-      const TIER_RECALC_KEY  = "tiered_rate_recalc_2026_05_31";
+      // One-time backfill: from 2026-05-31 onward, recompute every
+      // production line's ratePerTree against the CURRENT species rate
+      // config. Tiered species use the planter's TOTAL trees for the day
+      // as the tier trigger; flat species adopt the species' current
+      // per-tree rate. Either way, line earnings, entry totals, and 4%
+      // vac pay get rolled forward.
+      //
+      // Versioned key so this pass re-runs whenever the rate config
+      // changes meaningfully. Bump the suffix any time a species rate is
+      // updated and existing entries need to inherit it; devices that
+      // already ran an earlier version will run the new pass on next
+      // load. Within a version it stays idempotent — lines whose stored
+      // rate already matches the recomputed rate (within 0.00005) are
+      // skipped.
+      const TIER_RECALC_KEY  = "rate_recalc_2026_05_31_v2";
       const TIER_RECALC_FROM = "2026-05-31";
       if (typeof window !== "undefined" && !localStorage.getItem(TIER_RECALC_KEY)) {
+        // Clear the prior version's flag so we don't accumulate stale keys.
+        localStorage.removeItem("tiered_rate_recalc_2026_05_31");
         try {
           const ratesList = await getAllRecords<SpeciesRate>("species_rates");
           const ratesById = new Map(ratesList.map(r => [r.id, r]));
