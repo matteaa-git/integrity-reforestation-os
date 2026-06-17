@@ -199,6 +199,77 @@ function resolveRate(rate: SpeciesRate, trees: number, planterDayTotal?: number)
   return rate.ratePerTree;
 }
 
+/**
+ * Hand-rolled SVG dual-line chart showing daily trees and daily earnings.
+ * Returns an SVG string so the same markup can render in the React preview
+ * (via dangerouslySetInnerHTML) and the printable PDF HTML — no chart
+ * library and no client/print fork. Falls back to "" with < 2 data points
+ * (a single point isn't a meaningful trend).
+ */
+function renderProductionChartSvg(
+  dailyLog: { date: string; trees: number; earnings: number }[]
+): string {
+  if (dailyLog.length < 2) return "";
+
+  const W = 720, H = 240;
+  const padL = 50, padR = 60, padT = 30, padB = 40;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  const maxT = Math.max(1, ...dailyLog.map(d => d.trees))    * 1.1;
+  const maxE = Math.max(1, ...dailyLog.map(d => d.earnings)) * 1.1;
+
+  const xPos  = (i: number) => padL + (innerW * i) / (dailyLog.length - 1);
+  const yPosT = (v: number) => padT + innerH * (1 - v / maxT);
+  const yPosE = (v: number) => padT + innerH * (1 - v / maxE);
+
+  const treesPath = dailyLog
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${xPos(i).toFixed(1)} ${yPosT(d.trees).toFixed(1)}`)
+    .join(" ");
+  const earningsPath = dailyLog
+    .map((d, i) => `${i === 0 ? "M" : "L"} ${xPos(i).toFixed(1)} ${yPosE(d.earnings).toFixed(1)}`)
+    .join(" ");
+
+  // 5 horizontal grid lines (incl. top + bottom); label both axes.
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f => {
+    const y = padT + innerH * (1 - f);
+    return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#e5e7eb" stroke-width="1"/>
+            <text x="${padL - 8}" y="${y + 4}" text-anchor="end" font-size="10" fill="#9ca3af">${Math.round(maxT * f).toLocaleString("en-CA")}</text>
+            <text x="${W - padR + 8}" y="${y + 4}" text-anchor="start" font-size="10" fill="#9ca3af">$${Math.round(maxE * f).toLocaleString("en-CA")}</text>`;
+  }).join("");
+
+  // X labels — show ~8 evenly spaced dates so they don't overlap.
+  const stride = Math.max(1, Math.ceil(dailyLog.length / 8));
+  const xLabels = dailyLog.map((d, i) => {
+    if (i % stride !== 0 && i !== dailyLog.length - 1) return "";
+    return `<text x="${xPos(i).toFixed(1)}" y="${H - padB + 16}" text-anchor="middle" font-size="10" fill="#6b7280">${d.date.slice(5)}</text>`;
+  }).join("");
+
+  const treeMarkers = dailyLog
+    .map((d, i) => `<circle cx="${xPos(i).toFixed(1)}" cy="${yPosT(d.trees).toFixed(1)}" r="3" fill="#10b981"/>`)
+    .join("");
+  const earningsMarkers = dailyLog
+    .map((d, i) => `<circle cx="${xPos(i).toFixed(1)}" cy="${yPosE(d.earnings).toFixed(1)}" r="3" fill="#3b82f6"/>`)
+    .join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:240px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" xmlns="http://www.w3.org/2000/svg">
+    <g>
+      <circle cx="${padL}" cy="14" r="4" fill="#10b981"/>
+      <text x="${padL + 10}" y="18" font-size="11" fill="#374151" font-weight="600">Trees / day</text>
+      <circle cx="${padL + 90}" cy="14" r="4" fill="#3b82f6"/>
+      <text x="${padL + 100}" y="18" font-size="11" fill="#374151" font-weight="600">Earnings / day</text>
+      <text x="${padL - 8}" y="${padT - 8}" text-anchor="end" font-size="9" fill="#9ca3af" font-weight="700" text-transform="uppercase">Trees</text>
+      <text x="${W - padR + 8}" y="${padT - 8}" text-anchor="start" font-size="9" fill="#9ca3af" font-weight="700" text-transform="uppercase">$</text>
+    </g>
+    ${grid}
+    <path d="${treesPath}"    fill="none" stroke="#10b981" stroke-width="2" stroke-linejoin="round"/>
+    <path d="${earningsPath}" fill="none" stroke="#3b82f6" stroke-width="2" stroke-linejoin="round"/>
+    ${treeMarkers}
+    ${earningsMarkers}
+    ${xLabels}
+  </svg>`;
+}
+
 function newLine(): DraftLine { return { id: uid(), speciesId: "", trees: "" }; }
 function newDraftPlanter(): DraftPlanter {
   return { id: uid(), employeeId: "", employeeName: "", hoursWorked: "9", lines: [newLine()] };
@@ -2903,6 +2974,11 @@ ${blockSections}
          </table>`
       : "";
 
+    const trendSection = r.type === "planter" && r.dailyLog.length >= 2
+      ? `<div class="section-label">Production Trend</div>
+         <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff">${renderProductionChartSvg(r.dailyLog)}</div>`
+      : "";
+
     const docHtml = `<!DOCTYPE html><html><head>
 <meta charset="utf-8"/>
 <title>Payroll Report – ${r.name}</title>
@@ -2995,6 +3071,8 @@ ${earningsSection}
 </tbody></table>
 
 ${dailySection}
+
+${trendSection}
 
 <div class="sig-grid">
   <div>
@@ -9345,6 +9423,16 @@ ${dailySection}
                           </tr>
                         </tfoot>
                       </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Production Trend chart (planters only, needs ≥ 2 days) */}
+                {r.type === "planter" && r.dailyLog.length >= 2 && (
+                  <div>
+                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Production Trend</div>
+                    <div className="border border-gray-200 rounded-xl overflow-hidden p-3 bg-white">
+                      <div dangerouslySetInnerHTML={{ __html: renderProductionChartSvg(r.dailyLog) }} />
                     </div>
                   </div>
                 )}
