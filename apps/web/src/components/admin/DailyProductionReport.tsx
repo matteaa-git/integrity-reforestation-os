@@ -6379,10 +6379,37 @@ ${trendSection}
               </div>
             </div>
 
+            {(() => {
+              // Helper for the species-filter view: when a search is active,
+              // every row should only display the matching species (chips,
+              // Trees column) and the page-level Total Trees / crew header
+              // totals should sum only those species. When no search is
+              // active, behaves as full pass-through.
+              const speciesNeedle = speciesFilter.trim().toLowerCase();
+              function matchingLines(e: ProductionEntry) {
+                if (!speciesNeedle) return e.production;
+                return e.production.filter(l => {
+                  const sp = l.species.toLowerCase();
+                  const cd = l.code.toLowerCase();
+                  return sp.includes(speciesNeedle) || cd.includes(speciesNeedle)
+                      || speciesNeedle.includes(sp) || speciesNeedle.includes(cd);
+                });
+              }
+              function rowTrees(e: ProductionEntry) {
+                return speciesNeedle
+                  ? matchingLines(e).reduce((s, l) => s + l.trees, 0)
+                  : e.totalTrees;
+              }
+              const logTotalTrees = speciesNeedle
+                ? filtered.reduce((s, e) => s + rowTrees(e), 0)
+                : totals.totalTrees;
+
+            return (
+            <>
             {/* KPIs */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "Total Trees", value: fmt(totals.totalTrees) },
+                { label: speciesNeedle ? `Total Trees · "${speciesFilter}"` : "Total Trees", value: fmt(logTotalTrees) },
                 { label: "Planters",    value: String(totals.planterCount) },
               ].map(k => (
                 <div key={k.label} className="bg-surface border border-border rounded-xl p-4">
@@ -6401,7 +6428,7 @@ ${trendSection}
             ) : (
               [...new Set(filtered.map(e => e.crewBoss))].sort().map(crew => {
                 const ce = filtered.filter(e => e.crewBoss === crew);
-                const ct = ce.reduce((s, e) => s + e.totalTrees, 0);
+                const ct = ce.reduce((s, e) => s + rowTrees(e), 0);
                 // Unique planters in this crew: key → name
                 const crewPlanters = [...new Map(ce.map(e => [e.employeeId || e.employeeName, e.employeeName])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
                 return (
@@ -6461,10 +6488,18 @@ ${trendSection}
                                 )}
                               </td>
 
-                              {/* Species chips — click tree count to edit */}
+                              {/* Species chips — click tree count to edit.
+                                  When a species search is active, only the
+                                  matching lines render (and the Trees column
+                                  below sums only those lines). */}
                               <td className="px-3 py-2.5">
                                 <div className="flex flex-wrap gap-1">
-                                  {e.production.map((l, li) => (
+                                  {matchingLines(e).map((l) => {
+                                    // Find the line's ORIGINAL index inside
+                                    // e.production so inline-editing the
+                                    // tree count still targets the right line.
+                                    const li = e.production.findIndex(x => x.speciesId === l.speciesId);
+                                    return (
                                     <span key={l.speciesId} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-surface-secondary border border-border rounded font-medium text-text-secondary whitespace-nowrap">
                                       {l.code}
                                       {isEditing("trees", li) ? (
@@ -6483,11 +6518,12 @@ ${trendSection}
                                         >{fmt(l.trees)}</span>
                                       )}
                                     </span>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               </td>
 
-                              <td className="px-3 py-2.5 text-right font-semibold text-text-primary whitespace-nowrap">{fmt(e.totalTrees)}</td>
+                              <td className="px-3 py-2.5 text-right font-semibold text-text-primary whitespace-nowrap">{fmt(rowTrees(e))}</td>
 
                               {/* Hours */}
                               <td className="px-3 py-2.5 text-right" onClick={() => !isEditing("hoursWorked") && startEdit(e.id, "hoursWorked", String(e.hoursWorked))}>
@@ -6529,6 +6565,9 @@ ${trendSection}
                 );
               })
             )}
+            </>
+            );
+            })()}
           </div>
         )}
 
