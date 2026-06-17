@@ -2545,11 +2545,17 @@ ${blockSections}
       if (projectFilter !== "all" && e.project  !== projectFilter) return false;
       if (planterFilter !== "all" && e.employeeId !== planterFilter && e.employeeName !== planterFilter) return false;
       if (needle) {
-        // Keep the row when ANY of its production lines matches the search.
-        const matches = e.production.some(l =>
-          l.species.toLowerCase().includes(needle) ||
-          l.code.toLowerCase().includes(needle)
-        );
+        // Bidirectional match — handles both free-text typing (where the
+        // user's needle is a fragment of the species/code) AND picking from
+        // the datalist autocomplete (which fills the input with the
+        // combined "CODE – Species" string, neither of which appears verbatim
+        // on a production line's individual fields).
+        const matches = e.production.some(l => {
+          const sp = l.species.toLowerCase();
+          const cd = l.code.toLowerCase();
+          return sp.includes(needle) || cd.includes(needle)
+              || needle.includes(sp) || needle.includes(cd);
+        });
         if (!matches) return false;
       }
       return true;
