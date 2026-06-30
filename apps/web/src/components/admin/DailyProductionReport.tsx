@@ -1226,19 +1226,24 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       ["Position ID", "Payment Type", "Earnings Code", "Earnings Amount", "Earnings Hrs/Units", "Deduction Code", "Deduction Amount"],
     ];
 
-    function addEmployee(empId: string, regular: number, special: number, camp: number, equip: number, hours: number) {
+    function addEmployee(empId: string, regular: number, special: number, camp: number, other: number, equip: number, hours: number) {
       // One row per non-zero value. Rows with a zero or blank earnings/
       // deduction amount are omitted so the sheet only carries lines that
       // need to land in ADP. Hours sit on the regular-wages row only (ADP
       // convention — the special-worksite row is an allowance, not paid
-      // against hours).
+      // against hours). Deduction codes:
+      //   46 → Other deductions
+      //   47 → Camp costs
+      //   48 → Equipment deduction
       const regStr   = fmtAmt(regular);
       const specStr  = fmtAmt(special);
       const campStr  = fmtAmt(camp);
+      const otherStr = fmtAmt(other);
       const equipStr = fmtAmt(equip);
       const hoursStr = fmtAmt(hours);
       if (regStr)   rows.push([empId, "CPA", "01", regStr,  hoursStr, "", ""]);
       if (specStr)  rows.push([empId, "CPA", "A0", specStr, "",       "", ""]);
+      if (otherStr) rows.push([empId, "CPA", "",   "",      "",       "46", otherStr]);
       if (campStr)  rows.push([empId, "CPA", "",   "",      "",       "47", campStr]);
       if (equipStr) rows.push([empId, "CPA", "",   "",      "",       "48", equipStr]);
     }
@@ -1260,10 +1265,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const addl = p(d.additionalEarnings) + customEarningsTotal;
       const splitBase = pl.totalWithVac + topUp + addl;
       const gross  = splitBase - camp - equip - other; // taxable (CPP/EI/tax base)
-      // ADP only has a code-47 (camp) deduction row, not a separate "Other"
-      // bucket — fold any "Other" deductions into the camp amount so they
-      // actually flow through to the employee's deduction in ADP.
-      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp + other, equip, pl.totalHours);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, other, equip, pl.totalHours);
     }
 
     // Crew Bosses
@@ -1280,7 +1282,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const addl     = p(d.additionalEarnings);
       const splitBase = earnings + topUp + addl;
       const gross    = splitBase - camp - equip - other;
-      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp + other, equip, hours);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, other, equip, hours);
     }
 
     // Hourly / Day Rate
@@ -1296,7 +1298,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const addl    = p(emp.additionalEarnings);
       const splitBase = earnings + topUp + addl;
       const gross   = splitBase - camp - equip - other;
-      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp + other, equip, hrs);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, other, equip, hrs);
     }
 
     downloadCSV(rows, `ADP-payroll-${dateFrom}-to-${dateTo}.csv`);
