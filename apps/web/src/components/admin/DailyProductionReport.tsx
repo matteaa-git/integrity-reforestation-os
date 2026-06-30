@@ -528,9 +528,10 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
     chartDailyLog: { date: string; trees: number; earnings: number }[];
     chartPeriodStart: string;   // first day of the report period — used to
                                 // draw the divider line on the chart.
-    chartRangeStart: string;    // x-axis start (dateFrom − 28 days). Anchors
-                                // the timeline so the 6-week window is
-                                // always visible even if it's mostly empty.
+    chartRangeStart: string;    // x-axis start = this planter's first
+                                // entry date (full-season view). Anchors
+                                // the timeline so the entire season is
+                                // visible even on a short report period.
     chartRangeEnd: string;      // x-axis end (dateTo).
     // Named custom earnings lines (one per CustomEarningsColumn that holds a
     // non-zero value for this planter). Sums into additionalEarnings.
@@ -3135,18 +3136,17 @@ ${blockSections}
         });
     })();
 
-    // Production-trend series: pull this planter's entries across a 6-week
-    // window (28 days before dateFrom through dateTo) so the chart shows
-    // historical performance leading into the report period.
-    const chartTrendStart = (() => {
-      const d = new Date(`${dateFrom}T00:00:00`);
-      d.setDate(d.getDate() - 28);
-      return d.toISOString().slice(0, 10);
-    })();
+    // Production-trend series: full-season view — every entry this planter
+    // has logged, from their first day of work through the end of the
+    // report period. Chart spans that entire window so the report period
+    // is visible inside the context of their whole season.
+    const planterAllEntries = entries.filter(e => e.employeeName === p.name || e.employeeId === empKey);
+    const chartTrendStart = planterAllEntries.length > 0
+      ? planterAllEntries.reduce((min, e) => e.date < min ? e.date : min, planterAllEntries[0].date)
+      : dateFrom;
     const chartDailyLog = (() => {
       const byDate = new Map<string, { date: string; trees: number; earnings: number }>();
-      for (const e of entries) {
-        if (e.employeeName !== p.name && e.employeeId !== empKey) continue;
+      for (const e of planterAllEntries) {
         if (e.date < chartTrendStart || e.date > dateTo) continue;
         const rec = byDate.get(e.date) ?? { date: e.date, trees: 0, earnings: 0 };
         rec.trees    += e.totalTrees;
@@ -3240,7 +3240,7 @@ ${blockSections}
       : "";
 
     const trendSection = r.type === "planter" && r.chartDailyLog.length >= 2
-      ? `<div class="section-label">Production Trend · 6-Week View</div>
+      ? `<div class="section-label">Production Trend · Full Season</div>
          <div style="border:1px solid #e5e7eb;border-radius:10px;padding:12px;background:#fff">${renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart, rangeStart: r.chartRangeStart, rangeEnd: r.chartRangeEnd })}</div>`
       : "";
 
@@ -7175,18 +7175,16 @@ ${trendSection}
                                             };
                                           });
                                       })();
-                                      // Production-trend series: 28 days before
-                                      // dateFrom through dateTo, all entries for
-                                      // this planter, summed per date.
-                                      const chartTrendStart = (() => {
-                                        const dd = new Date(`${dateFrom}T00:00:00`);
-                                        dd.setDate(dd.getDate() - 28);
-                                        return dd.toISOString().slice(0, 10);
-                                      })();
+                                      // Production-trend series: full-season view
+                                      // — every entry this planter has, from their
+                                      // first day of work through the report end.
+                                      const planterAllEntries = entries.filter(ent => ent.employeeName === p.name || ent.employeeId === empKey);
+                                      const chartTrendStart = planterAllEntries.length > 0
+                                        ? planterAllEntries.reduce((min, ent) => ent.date < min ? ent.date : min, planterAllEntries[0].date)
+                                        : dateFrom;
                                       const chartDailyLog = (() => {
                                         const byDate = new Map<string, { date: string; trees: number; earnings: number }>();
-                                        for (const ent of entries) {
-                                          if (ent.employeeName !== p.name && ent.employeeId !== empKey) continue;
+                                        for (const ent of planterAllEntries) {
                                           if (ent.date < chartTrendStart || ent.date > dateTo) continue;
                                           const rec = byDate.get(ent.date) ?? { date: ent.date, trees: 0, earnings: 0 };
                                           rec.trees    += ent.totalTrees;
@@ -9953,7 +9951,7 @@ ${trendSection}
                     begins. Needs ≥ 2 days of activity in the 6-week window. */}
                 {r.type === "planter" && r.chartDailyLog.length >= 2 && (
                   <div>
-                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Production Trend · 6-Week View</div>
+                    <div className="text-[9px] uppercase tracking-[.15em] font-bold text-gray-400 mb-2">Production Trend · Full Season</div>
                     <div className="border border-gray-200 rounded-xl overflow-hidden p-3 bg-white">
                       <div dangerouslySetInnerHTML={{ __html: renderProductionChartSvg(r.chartDailyLog, { periodStart: r.chartPeriodStart, rangeStart: r.chartRangeStart, rangeEnd: r.chartRangeEnd }) }} />
                     </div>
