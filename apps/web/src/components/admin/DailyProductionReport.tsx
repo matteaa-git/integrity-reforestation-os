@@ -1259,7 +1259,10 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const addl = p(d.additionalEarnings) + customEarningsTotal;
       const splitBase = pl.totalWithVac + topUp + addl;
       const gross  = splitBase - camp - equip - other; // taxable (CPP/EI/tax base)
-      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, pl.totalHours);
+      // ADP only has a code-47 (camp) deduction row, not a separate "Other"
+      // bucket — fold any "Other" deductions into the camp amount so they
+      // actually flow through to the employee's deduction in ADP.
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp + other, equip, pl.totalHours);
     }
 
     // Crew Bosses
@@ -1276,7 +1279,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const addl     = p(d.additionalEarnings);
       const splitBase = earnings + topUp + addl;
       const gross    = splitBase - camp - equip - other;
-      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, hours);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp + other, equip, hours);
     }
 
     // Hourly / Day Rate
@@ -1292,7 +1295,7 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       const addl    = p(emp.additionalEarnings);
       const splitBase = earnings + topUp + addl;
       const gross   = splitBase - camp - equip - other;
-      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp, equip, hrs);
+      addEmployee(empId, splitBase * 0.75, splitBase * 0.25, camp + other, equip, hrs);
     }
 
     downloadCSV(rows, `ADP-payroll-${dateFrom}-to-${dateTo}.csv`);
