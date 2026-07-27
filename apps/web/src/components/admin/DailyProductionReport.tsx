@@ -604,6 +604,22 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   const [qpLogBlockFilter, setQpLogBlockFilter] = useState<string>("all");
   const [qpLogCrewFilter,  setQpLogCrewFilter]  = useState<string>("all");
 
+  // Mock Report generator (Quality tab). Generates N plots (1 per hectare)
+  // that in aggregate hit the target quality %, with the selected infractions
+  // distributed across the "bad" trees. Plots are persisted as real
+  // QualityPlot records so they show up in the Plot Log, Block Rollup, and
+  // Generate Report exactly like hand-entered plots.
+  const [mockDate, setMockDate]                 = useState(todayStr());
+  const [mockProject, setMockProject]           = useState("");
+  const [mockBlock, setMockBlock]               = useState("");
+  const [mockCrewBoss, setMockCrewBoss]         = useState("");
+  const [mockSurveyor, setMockSurveyor]         = useState("");
+  const [mockHectares, setMockHectares]         = useState<string>("");
+  const [mockQualityPct, setMockQualityPct]     = useState<string>("");
+  const [mockDensity, setMockDensity]           = useState<string>("2000");
+  const [mockInfractions, setMockInfractions]   = useState<Set<keyof QualityInfractions>>(new Set());
+  const [mockGenerating, setMockGenerating]     = useState(false);
+
   // Reconciliation tab
   const [reconcileTolerance, setReconcileTolerance] = useState<number>(3);
   const [reconcileProjectFilter, setReconcileProjectFilter] = useState<string>("all");
@@ -2212,6 +2228,106 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     await deleteRecord("quality_plots", id);
     setQualityPlots(prev => prev.filter(p => p.id !== id));
     if (qpEditingId === id) resetQualityForm();
+  }
+
+  // Generate N mock plots (1 per hectare) that in aggregate hit the target
+  // quality %, with the selected infractions distributed across the bad
+  // trees. Persisted as real QualityPlot records so they flow through the
+  // Plot Log, Block Rollup, and Generate Report pipes identically to
+  // hand-entered plots. Per-plot quality scatters ±10% around the target
+  // (last plot self-corrects so the aggregate lands on target).
+  async function generateMockReport() {
+    const ha = parseFloat(mockHectares);
+    const pct = parseFloat(mockQualityPct);
+    const density = parseFloat(mockDensity) || 2000;
+    if (!Number.isFinite(ha) || ha <= 0) { alert("Enter a valid block size (hectares)."); return; }
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) { alert("Quality % must be between 0 and 100."); return; }
+    if (!mockBlock.trim())    { alert("Block name is required.");  return; }
+    if (!mockCrewBoss.trim()) { alert("Crew boss is required.");   return; }
+
+    const selected = [...mockInfractions] as Array<keyof QualityInfractions>;
+    const numPlots = Math.max(1, Math.ceil(ha));
+    const spotsPerPlot = Math.max(1, Math.round(density / 200));
+    const plantedVariance = Math.max(1, Math.round(spotsPerPlot * 0.1));
+    const rand = (min: number, max: number) => Math.random() * (max - min) + min;
+
+    setMockGenerating(true);
+    try {
+      const newPlots: QualityPlot[] = [];
+      let cumPlanted = 0;
+      let cumGood = 0;
+
+      for (let i = 1; i <= numPlots; i++) {
+        const isLast = i === numPlots;
+        const treesPlanted = Math.max(1, Math.round(spotsPerPlot + rand(-plantedVariance, plantedVariance)));
+
+        // Scatter ±10% per plot; last plot closes the aggregate to the target.
+        let plotPct: number;
+        if (isLast) {
+          const desiredTotalPlanted = cumPlanted + treesPlanted;
+          const desiredTotalGood = desiredTotalPlanted * (pct / 100);
+          const needed = desiredTotalGood - cumGood;
+          plotPct = treesPlanted > 0 ? Math.max(0, Math.min(100, (needed / treesPlanted) * 100)) : pct;
+        } else {
+          plotPct = Math.max(0, Math.min(100, pct + rand(-10, 10)));
+        }
+        const good = Math.max(0, Math.min(treesPlanted, Math.round(treesPlanted * (plotPct / 100))));
+        const bad = treesPlanted - good;
+
+        // Distribute bad trees across selected infractions. One tree can carry
+        // multiple infractions in real surveys; here we partition simply so the
+        // sum of infraction counts ≈ bad trees, which is the common surveyor
+        // shorthand (dominant issue per tree).
+        const infractions: QualityInfractions = { ...EMPTY_INFRACTIONS };
+        if (bad > 0 && selected.length > 0) {
+          for (let j = 0; j < bad; j++) {
+            const k = selected[j % selected.length];
+            infractions[k]++;
+          }
+        }
+        infractions.missedSpot = Math.max(0, spotsPerPlot - treesPlanted);
+
+        newPlots.push({
+          id: uid(),
+          date: mockDate,
+          project: mockProject.trim(),
+          block: mockBlock.trim(),
+          plotNumber: String(i),
+          surveyor: mockSurveyor.trim() || "Mock",
+          crewBoss: mockCrewBoss.trim(),
+          plantableSpots: spotsPerPlot,
+          treesPlanted,
+          goodTrees: good,
+          prescribedDensity: density,
+          infractions,
+          notes: "Mock-generated",
+          createdAt: new Date().toISOString(),
+        });
+        cumPlanted += treesPlanted;
+        cumGood += good;
+      }
+
+      for (const p of newPlots) {
+        try { await saveRecord("quality_plots", p); }
+        catch (err) { console.warn("[mock-report] save failed for", p.id, err); }
+      }
+      setQualityPlots(prev => [...newPlots, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+      const aggPct = cumPlanted > 0 ? (cumGood / cumPlanted) * 100 : 0;
+      setToast(`Generated ${newPlots.length} mock plot${newPlots.length === 1 ? "" : "s"} for ${mockBlock.trim()} — aggregate quality ${aggPct.toFixed(1)}%`);
+    } catch (err) {
+      console.error("[mock-report] generate failed", err);
+      alert("Failed to generate mock report.");
+    } finally {
+      setMockGenerating(false);
+    }
+  }
+
+  function toggleMockInfraction(k: keyof QualityInfractions) {
+    setMockInfractions(prev => {
+      const next = new Set(prev);
+      next.has(k) ? next.delete(k) : next.add(k);
+      return next;
+    });
   }
 
   async function generateQualityReport() {
@@ -6413,6 +6529,103 @@ ${trendSection}
                     style={{ background: "var(--color-primary)", color: "#fff" }}
                   >
                     Generate Report
+                  </button>
+                </div>
+              </div>
+
+              {/* Mock Report Generator */}
+              <div className="bg-surface border border-border rounded-xl p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-text-tertiary">Mock Report Generator</div>
+                    <div className="text-[10px] text-text-tertiary mt-0.5">One plot per hectare, aggregating to your target quality. Saves as real plots in the log.</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div>
+                    <label className={labelCls}>Date</label>
+                    <input type="date" value={mockDate} onChange={e => setMockDate(e.target.value)} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Project</label>
+                    <input list="qp-projects" value={mockProject} onChange={e => setMockProject(e.target.value)} placeholder="Project…" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Block *</label>
+                    <input list="qp-blocks" value={mockBlock} onChange={e => setMockBlock(e.target.value)} placeholder="e.g. Block 3A" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Crew Boss *</label>
+                    <input list="qp-crews" value={mockCrewBoss} onChange={e => setMockCrewBoss(e.target.value)} placeholder="Name…" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Surveyor</label>
+                    <input value={mockSurveyor} onChange={e => setMockSurveyor(e.target.value)} placeholder="Optional" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Block Size (hectares) *</label>
+                    <input type="number" min="0" step="0.1" value={mockHectares} onChange={e => setMockHectares(e.target.value)} placeholder="e.g. 20" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Overall Quality % *</label>
+                    <input type="number" min="0" max="100" step="0.1" value={mockQualityPct} onChange={e => setMockQualityPct(e.target.value)} placeholder="e.g. 92" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Prescribed Density (stems/ha)</label>
+                    <input type="number" min="0" step="50" value={mockDensity} onChange={e => setMockDensity(e.target.value)} placeholder="2000" className={inputCls} />
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <label className={labelCls}>Main Quality Issues (select all that apply)</label>
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {INFRACTION_LABELS.filter(({ key }) => key !== "missedSpot").map(({ key, label, code }) => {
+                      const active = mockInfractions.has(key);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => toggleMockInfraction(key)}
+                          className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${
+                            active
+                              ? "border-primary/60 bg-primary/15 text-text-primary"
+                              : "border-border bg-surface-secondary text-text-secondary hover:border-primary/40 hover:text-text-primary"
+                          }`}
+                        >
+                          <span className="text-text-tertiary mr-1">{code}</span>{label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[10px] text-text-tertiary mt-2">Bad trees per plot are partitioned across the selected issues. Missed Spot is auto-computed from plantable − planted.</div>
+                </div>
+                <div className="flex items-center justify-between gap-4 bg-surface-secondary/30 border border-border rounded-lg px-4 py-3">
+                  <div className="grid grid-cols-3 gap-4 flex-1">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Plots to generate</div>
+                      <div className="text-lg font-bold text-text-primary">
+                        {(() => { const h = parseFloat(mockHectares); return Number.isFinite(h) && h > 0 ? Math.ceil(h) : "—"; })()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Trees per plot</div>
+                      <div className="text-lg font-bold text-text-primary">
+                        {(() => { const d = parseFloat(mockDensity); return Number.isFinite(d) && d > 0 ? Math.round(d / 200) : "—"; })()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest text-text-tertiary">Target quality</div>
+                      <div className="text-lg font-bold" style={{ color: (() => { const q = parseFloat(mockQualityPct); if (!Number.isFinite(q)) return "var(--color-text-tertiary)"; return q >= 95 ? "var(--color-primary)" : q >= 85 ? "#fbbf24" : "#f87171"; })() }}>
+                        {(() => { const q = parseFloat(mockQualityPct); return Number.isFinite(q) ? q.toFixed(1) + "%" : "—"; })()}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={generateMockReport}
+                    disabled={mockGenerating || !mockBlock.trim() || !mockCrewBoss.trim() || !mockHectares || !mockQualityPct}
+                    className="px-5 py-2 text-xs font-medium rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    style={{ background: "var(--color-primary)", color: "#fff" }}
+                  >
+                    {mockGenerating ? "Generating…" : "Generate Mock Report"}
                   </button>
                 </div>
               </div>
