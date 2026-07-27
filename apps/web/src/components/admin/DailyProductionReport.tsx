@@ -2312,8 +2312,14 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
         catch (err) { console.warn("[mock-report] save failed for", p.id, err); }
       }
       setQualityPlots(prev => [...newPlots, ...prev].sort((a, b) => b.date.localeCompare(a.date)));
+      // Prefill the Generate Report filter to this block and this date so
+      // clicking "Generate Report" right away picks up the freshly-created
+      // mock plots without the user having to reselect the filter.
+      setQpReportBlock(mockBlock.trim());
+      setQpReportDateFrom(mockDate);
+      setQpReportDateTo(mockDate);
       const aggPct = cumPlanted > 0 ? (cumGood / cumPlanted) * 100 : 0;
-      setToast(`Generated ${newPlots.length} mock plot${newPlots.length === 1 ? "" : "s"} for ${mockBlock.trim()} — aggregate quality ${aggPct.toFixed(1)}%`);
+      setToast(`Generated ${newPlots.length} mock plot${newPlots.length === 1 ? "" : "s"} for ${mockBlock.trim()} — aggregate quality ${aggPct.toFixed(1)}%. Report filter set to this block.`);
     } catch (err) {
       console.error("[mock-report] generate failed", err);
       alert("Failed to generate mock report.");
