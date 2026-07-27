@@ -461,6 +461,13 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
   } | null>(null);
   const [editingValue, setEditingValue] = useState("");
 
+  // Inline cell editing (Quality → Plot Log)
+  const [editingPlotCell, setEditingPlotCell] = useState<{
+    plotId: string;
+    field: "date" | "block" | "plotNumber" | "crewBoss" | "treesPlanted" | "goodTrees";
+  } | null>(null);
+  const [editingPlotValue, setEditingPlotValue] = useState("");
+
   // Export dropdown
   const [openExport, setOpenExport] = useState<"log" | "blocks" | "client" | null>(null);
 
@@ -2535,6 +2542,40 @@ ${blockSections}
 
   function cancelEdit() { setEditingCell(null); }
 
+  // ── Plot Log inline editing ───────────────────────────────────────────
+  function startPlotEdit(plotId: string, field: NonNullable<typeof editingPlotCell>["field"], value: string) {
+    setEditingPlotCell({ plotId, field });
+    setEditingPlotValue(value);
+  }
+
+  async function commitPlotEdit() {
+    if (!editingPlotCell) return;
+    const { plotId, field } = editingPlotCell;
+    const plot = qualityPlots.find(p => p.id === plotId);
+    if (!plot) { setEditingPlotCell(null); return; }
+
+    const updated: QualityPlot = { ...plot };
+    if (field === "date") {
+      updated.date = editingPlotValue || plot.date;
+    } else if (field === "block") {
+      updated.block = editingPlotValue;
+    } else if (field === "plotNumber") {
+      updated.plotNumber = editingPlotValue;
+    } else if (field === "crewBoss") {
+      updated.crewBoss = editingPlotValue;
+    } else if (field === "treesPlanted") {
+      updated.treesPlanted = Math.max(0, parseInt(editingPlotValue) || 0);
+    } else if (field === "goodTrees") {
+      updated.goodTrees = Math.max(0, parseInt(editingPlotValue) || 0);
+    }
+
+    await saveRecord("quality_plots", updated);
+    setQualityPlots(prev => prev.map(p => p.id === plotId ? updated : p).sort((a, b) => b.date.localeCompare(a.date)));
+    setEditingPlotCell(null);
+  }
+
+  function cancelPlotEdit() { setEditingPlotCell(null); }
+
   // ── Derived filter data ───────────────────────────────────────────────
 
   const uniqueCrews    = useMemo(() => [...new Set(entries.map(e => e.crewBoss))].sort(), [entries]);
@@ -2927,12 +2968,84 @@ ${blockSections}
       const updated = { id: editingRateId, ...rateForm };
       await saveRecord("species_rates", updated);
       setRates(prev => prev.map(r => r.id === editingRateId ? updated : r));
+      await recomputeEntriesForRate(updated);
     } else {
       const newRate: SpeciesRate = { id: `sr-${uid()}`, ...rateForm };
       await saveRecord("species_rates", newRate);
       setRates(prev => [...prev, newRate].sort((a, b) => a.species.localeCompare(b.species)));
     }
     setShowRateModal(false);
+  }
+
+  // When a species rate is edited, roll the new price forward into every
+  // production entry that references it (from 2026-05-31 onward, matching
+  // the one-time on-load backfill's cutoff). Payroll snapshots ratePerTree
+  // into each line at entry-save time, so without this pass a rate edit
+  // would only affect future entries.
+  async function recomputeEntriesForRate(rate: SpeciesRate) {
+    const CUTOFF = "2026-05-31";
+    const affected = entries.filter(e =>
+      e.date >= CUTOFF && e.production.some(l => l.speciesId === rate.id)
+    );
+    console.log(`[rate-edit] rate=${rate.code} ${rate.species} id=${rate.id} entries-in-scope=${entries.filter(e => e.date >= CUTOFF).length} entries-matching-species=${affected.length}`);
+    if (affected.length === 0) {
+      // Surface the no-match case so the user knows why nothing updated —
+      // usually means no production entries reference this species in the
+      // recompute window (2026-05-31 onward).
+      setToast(`No payroll entries from ${CUTOFF} onward reference ${rate.code} ${rate.species}`);
+      return;
+    }
+
+    // Tiered rates trigger off the planter's TOTAL trees for the day
+    // across every entry/species — mirror the backfill's day-total math.
+    const dayKey = (e: ProductionEntry) => `${e.employeeId || e.employeeName}|${e.date}`;
+    const dayTotals = new Map<string, number>();
+    for (const e of entries) {
+      if (e.date < CUTOFF) continue;
+      const k = dayKey(e);
+      dayTotals.set(k, (dayTotals.get(k) ?? 0) + e.totalTrees);
+    }
+
+    const recalced: ProductionEntry[] = [];
+    for (const e of affected) {
+      const dayTotal = dayTotals.get(dayKey(e)) ?? e.totalTrees;
+      let changed = false;
+      const newLines = e.production.map(l => {
+        if (l.speciesId !== rate.id) return l;
+        const newRpt = resolveRate(rate, l.trees, dayTotal);
+        if (Math.abs(newRpt - l.ratePerTree) < 0.00005) return l;
+        changed = true;
+        return { ...l, ratePerTree: newRpt, earnings: l.trees * newRpt };
+      });
+      if (!changed) continue;
+      const newTotalEarnings = newLines.reduce((s, l) => s + l.earnings, 0);
+      const newVacPay        = newTotalEarnings * 0.04;
+      recalced.push({
+        ...e,
+        production: newLines,
+        totalEarnings: newTotalEarnings,
+        avgPricePerTree: e.totalTrees > 0 ? newTotalEarnings / e.totalTrees : 0,
+        vacPay: newVacPay,
+        totalWithVac: newTotalEarnings,
+      });
+    }
+
+    if (recalced.length === 0) {
+      // Rate was saved but every matched line already had the new value
+      // (within 0.00005 tolerance) — nothing to update. Tell the user
+      // rather than silently no-op'ing.
+      setToast(`Rate saved — ${affected.length} payroll entr${affected.length === 1 ? "y" : "ies"} already at this rate`);
+      return;
+    }
+
+    for (const e of recalced) {
+      try { await saveRecord("production_entries", e); }
+      catch (err) { console.warn("[rate-edit] save failed for", e.id, err); }
+    }
+    console.log(`[rate-edit] updated ${recalced.length} entr${recalced.length === 1 ? "y" : "ies"}`, recalced.map(e => ({ id: e.id, date: e.date, planter: e.employeeName, totalEarnings: e.totalEarnings })));
+    const byId = new Map(recalced.map(e => [e.id, e]));
+    setEntries(prev => prev.map(e => byId.get(e.id) ?? e));
+    setToast(`Updated ${recalced.length} payroll entr${recalced.length === 1 ? "y" : "ies"} with new rate`);
   }
 
   async function handleDeleteRate(id: string) {
@@ -6338,14 +6451,53 @@ ${trendSection}
                       {logPlots.map(p => {
                         const eg = effectiveGood(p);
                         const q = p.treesPlanted > 0 ? (eg / p.treesPlanted) * 100 : 0;
+                        const isEditing = (field: NonNullable<typeof editingPlotCell>["field"]) =>
+                          editingPlotCell?.plotId === p.id && editingPlotCell.field === field;
+                        const plotInput = (type: string, extraCls = "") => (
+                          <input
+                            type={type}
+                            value={editingPlotValue}
+                            autoFocus
+                            onChange={ev => setEditingPlotValue(ev.target.value)}
+                            onBlur={commitPlotEdit}
+                            onKeyDown={ev => { if (ev.key === "Enter") commitPlotEdit(); if (ev.key === "Escape") cancelPlotEdit(); }}
+                            onClick={ev => ev.stopPropagation()}
+                            className={`bg-surface border border-primary/60 rounded px-1.5 py-0.5 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-primary/40 ${extraCls}`}
+                          />
+                        );
+                        const cellCls = "cursor-text rounded px-1.5 -mx-1.5 py-0.5 hover:bg-primary/10 hover:ring-1 hover:ring-primary/40 transition-colors";
                         return (
                           <div key={p.id} className="grid grid-cols-[90px_1fr_60px_140px_80px_80px_90px_80px] gap-3 px-5 py-2 text-xs items-center group">
-                            <div className="text-text-secondary">{p.date}</div>
-                            <div className="text-text-primary truncate">{p.block}</div>
-                            <div className="text-right text-text-tertiary">{p.plotNumber || "—"}</div>
-                            <div className="text-text-secondary truncate">{p.crewBoss}</div>
-                            <div className="text-right tabular-nums text-text-secondary">{fmt(p.treesPlanted)}</div>
-                            <div className="text-right tabular-nums text-text-primary">{fmt(eg)}</div>
+                            <div className={cellCls} onClick={() => !isEditing("date") && startPlotEdit(p.id, "date", p.date)} title="Click to edit">
+                              {isEditing("date") ? plotInput("date", "w-full") : (
+                                <span className="text-text-secondary">{p.date}</span>
+                              )}
+                            </div>
+                            <div className={`${cellCls} truncate`} onClick={() => !isEditing("block") && startPlotEdit(p.id, "block", p.block)} title="Click to edit">
+                              {isEditing("block") ? plotInput("text", "w-full") : (
+                                <span className="text-text-primary">{p.block || <span className="text-text-tertiary/50">—</span>}</span>
+                              )}
+                            </div>
+                            <div className={`${cellCls} text-right`} onClick={() => !isEditing("plotNumber") && startPlotEdit(p.id, "plotNumber", p.plotNumber)} title="Click to edit">
+                              {isEditing("plotNumber") ? plotInput("text", "w-full text-right") : (
+                                <span className="text-text-tertiary">{p.plotNumber || "—"}</span>
+                              )}
+                            </div>
+                            <div className={`${cellCls} truncate`} onClick={() => !isEditing("crewBoss") && startPlotEdit(p.id, "crewBoss", p.crewBoss)} title="Click to edit">
+                              {isEditing("crewBoss") ? plotInput("text", "w-full") : (
+                                <span className="text-text-secondary">{p.crewBoss || <span className="text-text-tertiary/50">—</span>}</span>
+                              )}
+                            </div>
+                            <div className={`${cellCls} text-right tabular-nums`} onClick={() => !isEditing("treesPlanted") && startPlotEdit(p.id, "treesPlanted", String(p.treesPlanted))} title="Click to edit">
+                              {isEditing("treesPlanted") ? plotInput("number", "w-full text-right") : (
+                                <span className="text-text-secondary">{fmt(p.treesPlanted)}</span>
+                              )}
+                            </div>
+                            <div className={`${cellCls} text-right tabular-nums`} onClick={() => !isEditing("goodTrees") && startPlotEdit(p.id, "goodTrees", String(p.goodTrees))} title={p.prescribedDensity ? `Click to edit • Stored good: ${fmt(p.goodTrees)} • After overplant: ${fmt(eg)}` : "Click to edit"}>
+                              {isEditing("goodTrees") ? plotInput("number", "w-full text-right") : (
+                                <span className="text-text-primary">{fmt(eg)}</span>
+                              )}
+                            </div>
                             <div className="text-right tabular-nums font-semibold" style={{ color: q >= 95 ? "var(--color-primary)" : q >= 85 ? "#fbbf24" : "#f87171" }}>
                               {q.toFixed(1)}%
                             </div>
