@@ -2300,7 +2300,6 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
           goodTrees: good,
           prescribedDensity: density,
           infractions,
-          notes: "Mock-generated",
           createdAt: new Date().toISOString(),
         });
         cumPlanted += treesPlanted;
