@@ -2415,7 +2415,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
     const totalOverplant = filtered.reduce((s, p) => s + overplantOf(p), 0);
     const overallQ = totalPlanted > 0 ? (totalGood / totalPlanted) * 100 : 0;
     const overallS = totalPlantable > 0 ? (totalGood / totalPlantable) * 100 : 0;
-    const avgDensity = filtered.length > 0 ? Math.round((totalGood * 200) / filtered.length) : 0;
+    const avgDensity = filtered.length > 0 ? Math.round((totalPlanted * 200) / filtered.length) : 0;
 
     const dates = filtered.map(p => p.date).sort();
     const dateFrom = qpReportDateFrom || dates[0];
@@ -2438,7 +2438,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
       const tPlantable = plots.reduce((s, p) => s + plantableOf(p), 0);
       const q = tPlanted > 0 ? (tGood / tPlanted) * 100 : 0;
       const ss = tPlantable > 0 ? (tGood / tPlantable) * 100 : 0;
-      const d = plots.length > 0 ? Math.round((tGood * 200) / plots.length) : 0;
+      const d = plots.length > 0 ? Math.round((tPlanted * 200) / plots.length) : 0;
       return `<tr>
         <td><b>${block}</b></td>
         <td class="r">${plots.length}</td>
@@ -2457,7 +2457,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
       const tOver      = plots.reduce((s, p) => s + overplantOf(p), 0);
       const q = tPlanted > 0 ? (tGood / tPlanted) * 100 : 0;
       const ss = tPlantable > 0 ? (tGood / tPlantable) * 100 : 0;
-      const d = plots.length > 0 ? Math.round((tGood * 200) / plots.length) : 0;
+      const d = plots.length > 0 ? Math.round((tPlanted * 200) / plots.length) : 0;
       const infrTotals: Record<string, number> = {};
       for (const p of plots) {
         for (const { key, label } of INFRACTION_LABELS) {
@@ -2472,7 +2472,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
         .map(p => {
           const eg = effGoodOf(p);
           const pq = p.treesPlanted > 0 ? (eg / p.treesPlanted) * 100 : 0;
-          const pd = eg * 200;
+          const pd = p.treesPlanted * 200;
           const plantable = plantableOf(p);
           // Per-plot infractions: code:count, only non-zero. Over-plant gets
           // a "OP" pseudo-code so it shows up alongside the survey infractions.
@@ -2586,7 +2586,7 @@ ${sess.planForTomorrow ? `<div style="margin-bottom:24px"><div style="font-size:
 <div class="kpi-grid">
   <div class="kpi"><div class="label">Quality %</div><div class="value">${overallQ.toFixed(1)}%</div><div class="sub">${fmt(totalGood)} good / ${fmt(totalPlanted)} planted</div></div>
   <div class="kpi"><div class="label">Stocking %</div><div class="value">${overallS.toFixed(1)}%</div><div class="sub">${fmt(totalGood)} good / ${fmt(totalPlantable)} plantable</div></div>
-  <div class="kpi"><div class="label">Avg Density</div><div class="value">${fmt(avgDensity)}</div><div class="sub">stems/ha (good × 200)</div></div>
+  <div class="kpi"><div class="label">Avg Density</div><div class="value">${fmt(avgDensity)}</div><div class="sub">stems/ha (trees × 200)</div></div>
   <div class="kpi"><div class="label">Plots Surveyed</div><div class="value">${filtered.length}</div><div class="sub">across ${byBlock.size} block${byBlock.size !== 1 ? "s" : ""}</div></div>
 </div>
 <table>
