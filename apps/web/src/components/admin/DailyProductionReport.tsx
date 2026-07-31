@@ -898,8 +898,32 @@ export default function DailyProductionReport({ employees, userRole = "admin", u
       for (const t of saved) map.set(t.id, t);
       setBlockTargets(map);
     });
-    getAllRecords<QualityPlot>("quality_plots").then(saved => {
-      setQualityPlots(saved.sort((a, b) => b.date.localeCompare(a.date)));
+    getAllRecords<QualityPlot>("quality_plots").then(async saved => {
+      // One-time backfill: clear the legacy "Mock-generated" note that
+      // early mock-report generations stamped onto plots. New mocks leave
+      // notes blank so printed reports match hand-entered plots exactly.
+      // Versioned localStorage flag keeps this idempotent per device.
+      let patched = saved;
+      const MOCK_NOTE_CLEAR_KEY = "mock_note_clear_v1";
+      if (typeof window !== "undefined" && !localStorage.getItem(MOCK_NOTE_CLEAR_KEY)) {
+        try {
+          const stale = saved.filter(p => p.notes === "Mock-generated");
+          if (stale.length > 0) {
+            const cleared = stale.map(({ notes, ...rest }) => rest as QualityPlot);
+            const byId = new Map(cleared.map(p => [p.id, p]));
+            patched = saved.map(p => byId.get(p.id) ?? p);
+            for (const p of cleared) {
+              try { await saveRecord("quality_plots", p); }
+              catch (err) { console.warn("[mock-note-clear] save failed for", p.id, err); }
+            }
+            console.log(`[mock-note-clear] cleared "Mock-generated" note on ${cleared.length} plot${cleared.length === 1 ? "" : "s"}`);
+          }
+          localStorage.setItem(MOCK_NOTE_CLEAR_KEY, "1");
+        } catch (err) {
+          console.warn("[mock-note-clear] backfill failed", err);
+        }
+      }
+      setQualityPlots(patched.sort((a, b) => b.date.localeCompare(a.date)));
     });
     getAllRecords<{ id: string }>("reconcile_closed_blocks").then(saved => {
       const remote = new Set(saved.map(r => r.id));
