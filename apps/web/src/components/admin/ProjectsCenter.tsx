@@ -198,6 +198,10 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
 
   // Blocks
   const [blocks, setBlocks]           = useState<ProjectBlock[]>([]);
+  // All blocks across every project — powers the Maps landing grid so the
+  // user can jump straight to any block map without picking a project first.
+  const [allBlocks, setAllBlocks]     = useState<ProjectBlock[]>([]);
+  const [mapsSearch, setMapsSearch]   = useState("");
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [editingBlock, setEditingBlock]     = useState<ProjectBlock | null>(null);
   const [blockForm, setBlockForm] = useState<{
@@ -305,6 +309,21 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
   useEffect(() => {
     loadProjects();
   }, [loadProjects]);
+
+  // Load every project's blocks for the Maps landing grid. Refires whenever
+  // the project list changes (import, create, delete) so new blocks surface
+  // without a reload. Keeping the selected-project loader below unchanged
+  // means the drilldown still has a dedicated, up-to-date blocks array.
+  useEffect(() => {
+    if (projects.length === 0) { setAllBlocks([]); return; }
+    let cancelled = false;
+    (async () => {
+      const results = await Promise.all(projects.map(p => getProjectBlocks(p.id)));
+      if (cancelled) return;
+      setAllBlocks(results.flat());
+    })();
+    return () => { cancelled = true; };
+  }, [projects]);
 
   useEffect(() => {
     if (!selectedId) { setBlocks([]); return; }
@@ -788,23 +807,130 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
       {/* ── Right: Project Detail ── (hidden on mobile/landscape phone until selected) */}
       <div className={`${selectedProject ? "flex" : "hidden lg:flex"} flex-1 flex-col min-w-0 overflow-hidden`}>
         {!selectedProject ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="text-4xl opacity-10 mb-4">⬡</div>
-              <div className="text-sm font-semibold text-text-secondary">Select a project</div>
-              <div className="text-xs text-text-tertiary mt-1 mb-4">
-                {isAdmin ? "Or create a new one to get started" : "Select a project to view its maps"}
+          (() => {
+            // Build one card per block that has a linked map file across all
+            // projects. Clicking opens BlockMapViewer directly (live GPS dot
+            // + zoom via Leaflet). This is the Maps center landing page.
+            const projectById = new Map(projects.map(p => [p.id, p]));
+            const fileById = new Map<string, ProjectFileResolved & { projectId: string }>();
+            for (const p of projects) {
+              for (const f of p.files) fileById.set(f.id, { ...f, projectId: p.id });
+            }
+            type MapCard = {
+              id: string;
+              blockName: string;
+              projectId: string;
+              projectName: string;
+              projectLocation: string;
+              file: ProjectFileResolved;
+            };
+            const cards: MapCard[] = [];
+            for (const b of allBlocks) {
+              if (!b.mapFileId) continue;
+              const f = fileById.get(b.mapFileId);
+              if (!f || !f.url) continue;
+              const proj = projectById.get(b.projectId);
+              if (!proj) continue;
+              cards.push({
+                id: b.id,
+                blockName: b.blockName,
+                projectId: proj.id,
+                projectName: proj.name,
+                projectLocation: proj.location ?? "",
+                file: f,
+              });
+            }
+            const q = mapsSearch.trim().toLowerCase();
+            const filtered = q
+              ? cards.filter(c =>
+                  c.blockName.toLowerCase().includes(q) ||
+                  c.projectName.toLowerCase().includes(q) ||
+                  c.projectLocation.toLowerCase().includes(q))
+              : cards;
+            filtered.sort((a, b) =>
+              a.projectName.localeCompare(b.projectName) || a.blockName.localeCompare(b.blockName));
+
+            return (
+              <div className="flex-1 overflow-y-auto">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-6">
+                  <div className="flex items-center justify-between gap-3 mb-5">
+                    <div>
+                      <h1 className="text-xl font-semibold text-text-primary tracking-tight">Maps</h1>
+                      <div className="text-xs text-text-tertiary mt-0.5">
+                        {cards.length === 0
+                          ? "No block maps yet — upload a map to a project and link it to a block."
+                          : `${filtered.length} map${filtered.length === 1 ? "" : "s"} ready to open · tap any to view with live GPS`}
+                      </div>
+                    </div>
+                    {cards.length > 0 && (
+                      <input
+                        type="text"
+                        placeholder="Search block or project…"
+                        value={mapsSearch}
+                        onChange={e => setMapsSearch(e.target.value)}
+                        className="w-56 text-xs border border-border rounded-lg px-3 py-1.5 bg-surface-secondary text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-primary/50"
+                      />
+                    )}
+                  </div>
+
+                  {cards.length === 0 ? (
+                    <div className="border-2 border-dashed border-border rounded-2xl p-16 text-center">
+                      <div className="text-4xl opacity-15 mb-3">⬢</div>
+                      <div className="text-sm font-semibold text-text-secondary">No block maps uploaded yet</div>
+                      <div className="text-xs text-text-tertiary mt-1 mb-5">
+                        {isAdmin
+                          ? "Open a project from the left, upload a GeoPDF, and link it to a block to see it here."
+                          : "Ask an admin to upload and link a block map to your project."}
+                      </div>
+                      {isAdmin && (
+                        <button
+                          onClick={openNewProject}
+                          className="px-4 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all"
+                          style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
+                        >
+                          + New Project
+                        </button>
+                      )}
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div className="border-2 border-dashed border-border rounded-2xl p-10 text-center">
+                      <div className="text-xs text-text-tertiary">No maps match &ldquo;{mapsSearch}&rdquo;.</div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {filtered.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => setMapViewer({ file: c.file, blockName: c.blockName, projectId: c.projectId })}
+                          className="group text-left bg-surface border border-border rounded-xl overflow-hidden hover:border-primary/50 hover:shadow-lg transition-all"
+                        >
+                          <div
+                            className="h-28 flex items-center justify-center text-5xl"
+                            style={{
+                              background: "linear-gradient(135deg, rgba(57,222,139,0.14), rgba(57,222,139,0.03))",
+                              color: "var(--color-primary)",
+                            }}
+                          >
+                            ⬢
+                          </div>
+                          <div className="p-3.5">
+                            <div className="text-xs font-semibold text-text-primary truncate">{c.blockName}</div>
+                            <div className="text-[10px] text-text-tertiary mt-0.5 truncate">{c.projectName}</div>
+                            {c.projectLocation && (
+                              <div className="text-[10px] text-text-tertiary/70 mt-0.5 truncate">📍 {c.projectLocation}</div>
+                            )}
+                            <div className="mt-2.5 inline-flex items-center gap-1 text-[10px] font-medium text-primary group-hover:underline">
+                              Open map →
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-              {isAdmin && (
-                <button
-                  onClick={openNewProject}
-                  className="px-4 py-2 text-xs font-semibold rounded-lg hover:opacity-90 transition-all" style={{ background: "var(--color-primary)", color: "var(--color-primary-deep)" }}
-                >
-                  + New Project
-                </button>
-              )}
-            </div>
-          </div>
+            );
+          })()
         ) : (
           <>
             {/* Project header */}
@@ -814,7 +940,7 @@ export default function ProjectsCenter({ userRole = "admin" }: { userRole?: stri
                 onClick={() => setSelectedId(null)}
                 className="lg:hidden mb-2 inline-flex items-center gap-1 text-[11px] font-medium text-text-secondary hover:text-text-primary"
               >
-                <span>←</span> Projects
+                <span>←</span> Maps
               </button>
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">

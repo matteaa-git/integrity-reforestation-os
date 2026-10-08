@@ -54,7 +54,7 @@ const MORE_GROUPS: { group: string; items: { id: AdminSection; label: string; ic
     group: "Field Operations",
     items: [
       { id: "operations",       label: "Operations",       icon: "⊕" },
-      { id: "projects",         label: "Projects",         icon: "◫" },
+      { id: "projects",         label: "Maps",             icon: "◫" },
     ],
   },
   {

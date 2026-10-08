@@ -46,7 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: "operations", label: "Operations",       icon: "⊕" },
       { id: "production", label: "Daily Production", icon: "⬡" },
-      { id: "projects",   label: "Projects",         icon: "◫" },
+      { id: "projects",   label: "Maps",             icon: "◫" },
     ],
   },
   {
